@@ -27,13 +27,13 @@ from . import util
 ##############################################################################
 @util.timeit
 def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cluster=6):
-    # type: (List[om.MDagPath|str], float, int) -> np.ndarray
+    # type: (list[om.MDagPath|str], float, int) -> np.ndarray
     """
     Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
 
     :param mesh_paths: A list of meshes to cluster
-    :param precision: The number of decimal places to round the weights to (default 3)
-    :param min_vertices_per_cluster: The minimum number of vertices required to form a cluster (default 6)
+    :param precision: The number of decimal places to round the skin weights (default: 3)
+    :param min_vertices_per_cluster: The minimum number of vertices required for a cluster (default: 6)
     :return: A list of cluster labels for each vertex across all meshes
     """
 
@@ -41,27 +41,22 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
     all_sparse_weights = []
     vertex_offsets = []
     vertex_offset = 0
-    bar = mel.eval("$tmp = $gMainProgressBar")
-    start_time = time.time()
 
     # Process each mesh and collect sparse weights
     for mesh_path in mesh_paths:
+
         try:
             sparse_weights = util.get_skin_weight_as_sparse_matrix(mesh_path)
         except ValueError:
+            # If the mesh has no skin cluster, create an empty sparse matrix
             mesh = util.get_mesh_fn(mesh_path)
             num_vertices = mesh.numVertices
-            sparse_weights = lil_matrix((num_vertices, 0))  # Empty sparse matrix
+            sparse_weights = lil_matrix((num_vertices, 0))
+
         num_vertices = sparse_weights.shape[0]
         all_sparse_weights.append(sparse_weights)
         vertex_offsets.append(vertex_offset)
         vertex_offset += num_vertices
-
-        if not cmds.about(batch=True):
-            cmds.progressBar(bar, edit=True, step=num_vertices, status=f"Gathering skin weights for {mesh_path}...")
-
-    elapsed_time = time.time() - start_time
-    print(f"Elapsed time to gather skin weights: {elapsed_time:.2f} seconds")
 
     # Combine all sparse weights into one matrix
     total_vertices = vertex_offset
@@ -74,43 +69,61 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
         combined_sparse_weights[current_vertex:current_vertex + num_vertices, :sparse_weights.shape[1]] = sparse_weights
         current_vertex += num_vertices
 
-    elapsed_time2 = time.time() - start_time - elapsed_time
-    print(f"Elapsed time to cluster vertices: {elapsed_time2:.2f} seconds")
+    # Convert to CSR format for efficient row operations
+    csr_weights = combined_sparse_weights.tocsr()
 
-    clusters = collections.defaultdict(list)
+    # Round the non-zero data to the specified precision
+    csr_weights.data = np.round(csr_weights.data, precision)
 
-    # Iterate over each vertex in the combined sparse weights
-    for vertex_index in range(combined_sparse_weights.shape[0]):
-        # Extract the sparse weights for the current vertex
-        sparse_row = combined_sparse_weights.getrow(vertex_index)
-        if sparse_row.nnz == 0:  # Skip vertices with no weights (fully zero row)
-            continue
+    # Create a unique key for each vertex based on its non-zero indices and rounded weights
+    # Use a hashable representation (tuple of indices and weights)
+    # Since we have variable-length data per row, we'll represent each row as a tuple of (indices, weights)
 
-        # Convert to dense array, round to specified precision, and flatten to 1D
-        vertex_weights = np.round(sparse_row.toarray(), precision).flatten()
-        rounded_weights = tuple(vertex_weights)
-        clusters[rounded_weights].append(vertex_index)
+    # Get the indices where rows have non-zero entries
+    non_zero_row_indices = np.diff(csr_weights.indptr) > 0
+    vertex_indices = np.where(non_zero_row_indices)[0]
 
-    elapsed_time3 = time.time() - start_time - elapsed_time - elapsed_time2
-    print(f"Elapsed time to cluster vertices: {elapsed_time3:.2f} seconds")
+    # Extract the data for non-zero rows
+    indptr = csr_weights.indptr
+    indices = csr_weights.indices
+    data = csr_weights.data
 
-    # Initialize labels, where each vertex is labeled with -1 (isolated)
-    labels = np.full(combined_sparse_weights.shape[0], -1, dtype=int)
+    # Create a list to hold the keys for each vertex
+    vertex_keys = []
+
+    for idx in vertex_indices:
+        start = indptr[idx]
+        end = indptr[idx + 1]
+        joint_indices = indices[start:end]
+        weight_values = data[start:end]
+
+        # Create a tuple of (joint_indices, weight_values)
+        # For consistent ordering, sort by joint_indices
+        sorted_order = np.argsort(joint_indices)
+        joint_indices = joint_indices[sorted_order]
+        weight_values = weight_values[sorted_order]
+        key = tuple(zip(joint_indices, weight_values))
+        vertex_keys.append(key)
+
+    # Map keys to vertex indices
+    key_to_vertices = collections.defaultdict(list)
+    for vertex_index, key in zip(vertex_indices, vertex_keys):
+        key_to_vertices[key].append(vertex_index)
+
+    # Initialize labels
+    labels = np.full(total_vertices, -1, dtype=int)
     cluster_id = 0
-    for weights, indices in clusters.items():
+    for indices in key_to_vertices.values():
         if len(indices) > min_vertices_per_cluster:
-            labels[indices] = cluster_id  # Assign a cluster ID to all vertices in the cluster
+            labels[indices] = cluster_id
             cluster_id += 1
-
-    if not cmds.about(batch=True):
-        cmds.progressBar(bar, edit=True, step=vertex_offset, status="Clustering vertices...")
 
     return labels
 
 
 @util.timeit
 def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
-    # type: (List[om.MDagPath|str], np.ndarray, float) -> np.ndarray
+    # type: (list[om.MDagPath|str], np.ndarray, float) -> np.ndarray
     """
     Refine clusters by checking topological adjacency across multiple meshes.
 
@@ -221,7 +234,7 @@ def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
 
 @util.timeit
 def cluster_vertices(mesh_paths):
-    # type: (List[om.MDagPath|str]) -> np.ndarray
+    # type: (list[om.MDagPath|str]) -> np.ndarray
     """
     Cluster vertices across multiple meshes.
 

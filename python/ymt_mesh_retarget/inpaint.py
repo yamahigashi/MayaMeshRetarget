@@ -28,8 +28,8 @@ from . import util
 def segregate_vertices_by_confidence(
         src_path,
         dst_paths,
-        threshold_distance=0.025,
-        threshold_angle=155.0,
+        threshold_dist_coefficient=0.1,
+        threshold_angle=180.0,
 ):
     # type: (om.MDagPath, list[om.MDagPath]|om.MDagPath, float, float) -> tuple[np.ndarray, np.ndarray]
     """segregate vertices by confidence."""
@@ -299,13 +299,14 @@ def __compute_cotangent(v1, v2, v3):
     return cotan
 
 
+@util.timeit
 def inpaint_distance(
         source_path,
         target_paths,
         distances,
         labels,
-        threshold_distance=0.025,
-        threshold_angle=325.0,
+        threshold_dist_coefficient=0.1,
+        threshold_angle=180.0,
 ):
     # type: (om.MDagPath, list[om.MDagPath], np.ndarray, np.ndarray, float, float) -> None
     """Inpaint the distance matrix for unconvinced vertices.

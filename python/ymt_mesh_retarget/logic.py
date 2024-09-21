@@ -194,11 +194,12 @@ def retarget(
         meshes,
         kernel=RBF.linear,
         radius_coefficient=0.0005,
+        angle=180.0,
         sampling_stride=1,
         apply_rigid_transform=False,
         inpaint=True
 ):
-    # type: (str, str, list[str]|str, Kernel|str, float, int, bool, bool) -> list[str]
+    # type: (str, str, list[str]|str, Kernel|str, float, float, int, bool, bool) -> list[str]
     """Run the mesh retarget
 
     :param source: Source mesh

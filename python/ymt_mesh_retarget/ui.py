@@ -393,8 +393,8 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.inpaint_button_group2 = QButtonGroup(self.settings_group_box)
         self.inpaint_button_group2.addButton(self.inpaint_mode_dist)
         self.inpaint_button_group2.addButton(self.inpaint_mode_selection)
-        self.dist_slider = FloatSlider("distance:", minimum=0.000001, maximum=1.0, interval=0.1, step=0.005, initial_value=0.05)
-        self.angle_slider = FloatSlider("angle:", minimum=0.0, maximum=180.0, interval=1.0, step=0.5, initial_value=25.0)
+        self.dist_slider = FloatSlider("distance:", minimum=0.000001, maximum=0.3, interval=0.01, step=0.001, initial_value=0.1)
+        self.angle_slider = FloatSlider("angle:", minimum=0.0, maximum=180.0, interval=1.0, step=0.5, initial_value=180.0)
 
         # -----------------------------------------------
         self.utility_group_box = QGroupBox("Utility")
@@ -723,10 +723,10 @@ def show_ui():
     src = None
     dst = None
     meshes = None
-    inpaint = True
+    inpaint = False
     inpaint_mode = "distance"
-    distance = 0.05
-    angle = 25.0
+    distance = 0.1
+    angle = 180.0
     sampling_stride = 1
     apply_rigid_transform = True
     pos = None

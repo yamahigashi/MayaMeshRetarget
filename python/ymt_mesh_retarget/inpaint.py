@@ -18,9 +18,6 @@ from scipy.sparse import (
 from maya.api import (
     OpenMaya as om,
 )
-from maya import (
-    cmds
-)
 
 from . import util
 

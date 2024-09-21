@@ -1,8 +1,8 @@
+# pyright: reportCallIssue=false,reportArgumentType=false,reportAttributeAccessIssue=false,reportMissingImports=false
 """This module contains the UI for the application."""
 from maya import cmds
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-# from .vendor import Qt
 from Qt.QtWidgets import (  # type: ignore
     QApplication,
     QWidget,

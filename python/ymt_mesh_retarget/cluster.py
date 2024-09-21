@@ -2,7 +2,6 @@
 """
 Module for clustering vertices based on skin weights and topological adjacency.
 """
-import time
 import collections
 
 import numpy as np

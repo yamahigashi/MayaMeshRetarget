@@ -37,7 +37,7 @@ def segregate_vertices_by_confidence(
     if not isinstance(dst_paths, list):
         dst_paths = [dst_paths]
 
-    threshold_distance = __calculate_threshold_distance([src_path], threshold_distance)
+    threshold_distance = util.calculate_threshold_distance([src_path], threshold_dist_coefficient)
     target_vertex_data = __create_vertex_data_array(dst_paths)
     closest_points_data = __get_closest_points_by_kdtree(src_path, target_vertex_data)
 
@@ -54,6 +54,7 @@ def segregate_vertices_by_confidence(
     return confident_vertex_indices, unconvinced_vertex_indices
 
 
+@util.timeit
 def __inpaint_distance_matrix(mesh_paths, D, known_indices, unknown_indices):
     # type: (list[om.MDagPath], np.ndarray, np.ndarray, np.ndarray) -> np.ndarray
     """apply inpainting for indices."""
@@ -96,33 +97,6 @@ def __inpaint_distance_matrix(mesh_paths, D, known_indices, unknown_indices):
     D[S_nomatch] = D_U
 
     return D
-
-
-def __calculate_threshold_distance(mesh_paths, threadhold_ratio=0.05):
-    # type: (list[om.MDagPath], float) -> float
-    """Returns dbox * threadhold_ratio (default 0.05).
-
-    dbox is the target mesh bounding box diagonal length.
-    """
-
-    bbox = None
-    for path in mesh_paths:
-        if not bbox:
-            bbox = util.get_bounding_box(path)
-        else:
-            bbox.expand(util.get_bounding_box(path))
-
-    if not bbox:
-        raise ValueError("Invalid mesh name")
-
-    bbox_min = bbox.min
-    bbox_max = bbox.max
-    bbox_diag = bbox_max - bbox_min
-    bbox_diag_length = bbox_diag.length()
-
-    threshold_distance = bbox_diag_length * threadhold_ratio
-
-    return threshold_distance
 
 
 def __create_vertex_data_array(mesh_paths):
@@ -324,8 +298,19 @@ def inpaint_distance(
     """
 
     # Segregate vertices based on confidence and inpaint distances
-    tmp = segregate_vertices_by_confidence(source_path, target_paths, threshold_distance, threshold_angle)
+    tmp = segregate_vertices_by_confidence(source_path, target_paths, threshold_dist_coefficient, threshold_angle)
     confident_indices, unconvinced_indices = tmp
+
+    # TODO: Rigid transformation for unconvinced vertices
+    # # Inpaint distances for unconvinced vertices
+    # if len(unconvinced_indices) > 0:
+    #     distances = __inpaint_distance_matrix(
+    #             target_paths,
+    #             distances,
+    #             confident_indices,
+    #             unconvinced_indices)
+    # 
+    # return distances
 
     all_indices = np.arange(distances.shape[0])
 
@@ -333,30 +318,29 @@ def inpaint_distance(
     isolated_indices = np.where(labels == -1)[0]
     unconvinced_iso_indices = np.intersect1d(unconvinced_indices, isolated_indices)
     confident_all_indices = np.setdiff1d(all_indices, unconvinced_iso_indices)
-
-    # Inpaint distances for unconvinced vertices
-    if len(unconvinced_iso_indices) > 0:
+    if len(unconvinced_indices) > 0:
         distances = __inpaint_distance_matrix(
                 target_paths,
                 distances,
                 confident_all_indices,
                 unconvinced_iso_indices)
 
-    # # Inpaint distances for unconvinced vertices
-    # if len(unconvinced_indices) > 0:
-    #     distances = inpaint_distance_matrix(
-    #             target_paths,
-    #             distances,
-    #             confident_indices,
-    #             unconvinced_indices)
-    # 
-    # # # Inpaint distances for cluster vertices
-    # for cluster_id in np.unique(labels[labels >= 0]):
-    #     cluster_indices = np.where(labels == cluster_id)[0]
-    #     unconvinced_cluster_indices = np.intersect1d(cluster_indices, unconvinced_indices)
-    # 
-    #     # update the distances for the cluster with its mean distance
-    #     if len(unconvinced_cluster_indices) > 0:
-    #         distances[cluster_indices] = np.mean(distances[cluster_indices])
-
     return distances
+
+
+def select_inpaint_area(src_path, dst_paths, threshold_distance=0.1, threshold_angle=180.0):
+    # type: (om.MDagPath, list[om.MDagPath]|om.MDagPath, float, float) -> None
+    """Select vertices to inpaint."""
+
+    if not isinstance(dst_paths, list):
+        dst_paths = [dst_paths]
+
+    confident_vertex_indices, unconvinced_vertex_indices = segregate_vertices_by_confidence(
+            src_path,
+            dst_paths,
+            threshold_distance,
+            threshold_angle)
+    print(f"Confident: {len(confident_vertex_indices)}")
+    print(f"Unconvinced: {len(unconvinced_vertex_indices)}")
+
+    util.select_vertices(dst_paths, unconvinced_vertex_indices)

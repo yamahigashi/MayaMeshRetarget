@@ -246,6 +246,7 @@ def retarget(
                 meshes_dag,
                 kernel,
                 radius_coefficient,
+                angle,
                 sampling_stride,
                 apply_rigid_transform,
                 inpaint)
@@ -267,13 +268,14 @@ def __retarget(
         source_path,
         target_path,
         mesh_paths,
-        kernel=RBF.linear,
-        radius_coefficient=0.0005,
-        sampling_stride=1,
-        apply_rigid_transform=False,
-        inpaint=True
+        kernel,
+        radius_coefficient,
+        angle,
+        sampling_stride,
+        apply_rigid_transform,
+        inpaint
 ):
-    # type: (om.MDagPath, om.MDagPath, list[om.MDagPath], Kernel, float, int, bool, bool) -> list[om.MDagPath]
+    # type: (om.MDagPath, om.MDagPath, list[om.MDagPath], Kernel, float, float, int, bool, bool) -> list[om.MDagPath]
     """Run the mesh retarget.
     :param source: Source mesh
     :param target: Modified source mesh
@@ -303,8 +305,8 @@ def __retarget(
                 maxValue=100)
 
     # Get the weight matrix
-    radius = __calculate_radius_from_bounding_box(target_path, radius_coefficient)
-    weights = __calculate_rbf_weight_matrix(source_points, target_points, kernel, radius)
+    radius = util.calculate_threshold_distance(source_path, radius_coefficient)
+    weights = __calculate_rbf_weight_matrix(source_points, target_points, kernel, radius_coefficient)
 
     deformed_points = __calculate_rbf_deformed_positions(
             source_path,
@@ -312,7 +314,8 @@ def __retarget(
             source_points,
             weights,
             kernel,
-            radius,
+            radius_coefficient,
+            angle,
             apply_rigid_transform,
             inpaint)
 
@@ -331,7 +334,7 @@ def __retarget(
             print(f"Invalid mesh name: {mesh_name}")
             continue
 
-        deformed = __apply_deformed_vertex_positions(mesh_path, position, radius, kernel)
+        deformed = __apply_deformed_vertex_positions(mesh_path, position, apply_rigid_transform, inpaint)
         deformed_meshes.append(deformed)
 
         if not cmds.about(batch=True):
@@ -350,11 +353,12 @@ def __calculate_rbf_deformed_positions(
         source_points,
         weights,
         kernel,
-        radius,
+        radius_coefficient,
+        angle,
         apply_rigid_transform=False,
         do_inpaint=True
 ):
-    # type: (om.MDagPath, list[om.MDagPath], np.ndarray, np.ndarray, Kernel, float, bool, bool) -> dict[str, np.ndarray]
+    # type: (om.MDagPath, list[om.MDagPath], np.ndarray, np.ndarray, Kernel, float, float, bool, bool) -> dict[str, np.ndarray]
     """Applies the retargeting process to a single mesh
 
     Clusters the vertices of the mesh based on skinning weights and topology,
@@ -372,6 +376,7 @@ def __calculate_rbf_deformed_positions(
     all_distances = []
     indices_map = {}
     vertex_offset = 0
+    radius = util.calculate_threshold_distance(source_path, radius_coefficient)
 
     bar = mel.eval("$tmp = $gMainProgressBar")
     if not cmds.about(batch=True):
@@ -408,7 +413,6 @@ def __calculate_rbf_deformed_positions(
         labels = cluster.cluster_vertices(mesh_paths)
     else:
         labels = np.full(vertex_offset, -1, dtype=int)
-    print(f"clustered {len(np.unique(labels))} clusters")
 
     identity = np.ones((combined_points.shape[0], 1))
 
@@ -417,7 +421,10 @@ def __calculate_rbf_deformed_positions(
             source_path,
             mesh_paths,
             combined_distances,
-            labels)
+            labels,
+            threshold_dist_coefficient=radius_coefficient,
+            threshold_angle=angle,
+        )
 
     h_combined = np.bmat([[combined_distances, identity, combined_points]])
     deformed_points = np.dot(h_combined, weights)
@@ -458,9 +465,8 @@ def __apply_uniform_scale_to_clusters(
     return after_points
 
 
-@util.timeit
 def __calculate_mesh_distance_matrix(source_points, mesh_path, kernel, radius, weights, apply_rigid_transform):
-    # type: (np.ndarray, om.MDagPath, Kernel, float, np.ndarray, bool) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[int, float]]
+    # type: (np.ndarray, om.MDagPath, Kernel, float, np.ndarray, bool) -> tuple[np.ndarray, np.ndarray]
     """Calculate the distance matrix for a single mesh."""
 
     points = util.convert_points_to_numpy(mesh_path)
@@ -509,16 +515,16 @@ def __apply_rigid_transform_with_scaling(before_cluster_points, after_cluster_po
     return scaled_points_world
 
 
-def __apply_deformed_vertex_positions(mesh_path, deformed_points, radius, kernel):
-    # type: (om.MDagPath, np.ndarray, float, Kernel) -> om.MDagPath
+def __apply_deformed_vertex_positions(mesh_path, deformed_points, apply_rigid_transform, inpaint):
+    # type: (om.MDagPath, np.ndarray, bool, bool) -> om.MDagPath
     """Sets the deformed points to the mesh.
     
     Duplicates the mesh and applies the deformed points.
     
     :param mesh_path: The mesh to apply deformed positions
     :param deformed_points: The calculated deformed positions as a numpy array
-    :param radius: The radius parameter for the RBF (used in naming the new mesh)
-    :param kernel: The RBF kernel function (used in naming the new mesh)
+    :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
+    :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices
     """
 
     # Convert deformed points to MPoint objects for Maya
@@ -527,8 +533,13 @@ def __apply_deformed_vertex_positions(mesh_path, deformed_points, radius, kernel
     # Duplicate the shape and apply the deformed points
     mesh_name = mesh_path.fullPathName().split("|")[-2]
 
-    rounded_radius = round(radius, 2)
-    new_name = "{}_{}_{}".format(mesh_name, rounded_radius, kernel.__name__).replace(".", "_")
+    name_parts = [mesh_name]
+    if apply_rigid_transform:
+        name_parts.append("rigid")
+    if inpaint:
+        name_parts.append("inpaint")
+
+    new_name = "_".join(name_parts)
     dupe = cmds.duplicate(mesh_path.fullPathName(), name=new_name)[0]
     util.set_points(dupe, deformed_mpoints)
 
@@ -537,17 +548,3 @@ def __apply_deformed_vertex_positions(mesh_path, deformed_points, radius, kernel
         raise ValueError("Invalid mesh name")
 
     return dag
-
-
-def __calculate_radius_from_bounding_box(mesh_path, coefficient=0.1):
-    # type: (om.MDagPath|str, float) -> float
-    """
-    Calculate the radius based on the bounding box size of the target mesh.
-    
-    :param mesh_path: The target mesh DAG path
-    :param coefficient: A scaling factor for the bounding box size (default 0.1)
-    :return: Computed radius
-    """
-    bbox = util.get_bounding_box(mesh_path)
-    diagonal_length = np.linalg.norm(np.array(bbox.min) - np.array(bbox.max))
-    return diagonal_length * coefficient

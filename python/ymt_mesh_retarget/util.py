@@ -30,6 +30,22 @@ logger.setLevel(DEBUG)
 
 
 ##############################################################################
+# decorators
+##############################################################################
+def timeit(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        logger.debug("Execution time of {func.__name__}: {elapsed:.3f} seconds".format(
+            func=func,
+            elapsed=(end_time - start_time)
+        ))
+        return result
+    return wrapper
+
+
+##############################################################################
 # utility functions for OpenMaya
 ##############################################################################
 def get_bounding_box(mesh_path):
@@ -176,6 +192,66 @@ def set_points(mesh, points):
 
 
 ##############################################################################
+def select_vertices(mesh_paths, vertices):
+    # type: (list[om.MDagPath]|om.MDagPath, np.ndarray) -> None
+    """Select the given vertices on the given meshes."""
+
+    if isinstance(mesh_paths, om.MDagPath):
+        mesh_paths = [mesh_paths]
+
+    vertex_path = []
+    vertex_offset = 0
+
+    for mesh in mesh_paths:
+        mesh_fn = get_mesh_fn(mesh)
+        num_vertices = mesh_fn.numVertices
+
+        # Select vertices within the current mesh's range
+        valid_vertices = vertices[
+                (vertices >= vertex_offset) &
+                (vertices < vertex_offset + num_vertices)
+        ] - vertex_offset
+
+        # Format valid vertices for Maya selection
+        vertex_strings = ["{}.vtx[{}] ".format(mesh, v) for v in valid_vertices]
+        vertex_path.extend(vertex_strings)
+
+        vertex_offset += num_vertices
+
+    cmds.select(mesh_paths)
+    cmds.select(vertex_path, add=True)
+    cmds.selectMode(component=True)
+
+
+##############################################################################
+def calculate_threshold_distance(mesh_paths, threadhold_ratio):
+    # type: (list[om.MDagPath]|om.MDagPath, float) -> float
+    """Returns dbox * threadhold_ratio.
+
+    dbox is the target mesh bounding box diagonal length.
+    """
+    if isinstance(mesh_paths, om.MDagPath):
+        mesh_paths = [mesh_paths]
+
+    bbox = None
+    for path in mesh_paths:
+        if not bbox:
+            bbox = get_bounding_box(path)
+        else:
+            bbox.expand(get_bounding_box(path))
+
+    if not bbox:
+        raise ValueError("Invalid mesh name")
+
+    bbox_min = bbox.min
+    bbox_max = bbox.max
+    bbox_diag = bbox_max - bbox_min
+    bbox_diag_length = bbox_diag.length()
+
+    threshold_distance = bbox_diag_length * threadhold_ratio
+
+    return threshold_distance
+
 
 ##############################################################################
 def restructure_meshes_hierarchy(suffix="retarget", targets=None):
@@ -209,19 +285,3 @@ def restructure_meshes_hierarchy(suffix="retarget", targets=None):
 
         if parent:
             mesh = cmds.parent(mesh, parent)[0]
-
-
-##############################################################################
-# decorators
-##############################################################################
-def timeit(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        logger.debug("Execution time of {func.__name__}: {elapsed:.3f} seconds".format(
-            func=func,
-            elapsed=(end_time - start_time)
-        ))
-        return result
-    return wrapper

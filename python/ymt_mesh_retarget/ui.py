@@ -38,6 +38,7 @@ from Qt.QtCore import (
 from . import (
     logic,
     util,
+    inpaint,
 )
 
 WINDOW_NAME = "MeshRetargetingToolWindow"
@@ -125,7 +126,7 @@ class FloatSlider(QWidget):
         self.label = QLabel(label, self)
         self.label.setFixedWidth(LABEL_WIDTH - 7)
         self.label.setAlignment(Qt.AlignRight)
-        self.value_display = QLabel("{:.2f}".format(initial_value), self)
+        self.value_display = QLabel("{:.3f}".format(initial_value), self)
         self.value_display.setFixedWidth(40)
         self.value_display.setAlignment(Qt.AlignRight)
         self.slider = QSlider(Qt.Horizontal, self)
@@ -155,7 +156,7 @@ class FloatSlider(QWidget):
     def updateValueDisplay(self, value):
         # Calculate the float value based on the slider's integer value
         float_value = value / self.value_multiplier
-        self.value_display.setText("{:.2f}".format(float_value))
+        self.value_display.setText("{:.3f}".format(float_value))
 
     def value(self):
         # Get the current float value of the slider
@@ -265,10 +266,10 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
                  src=None,
                  dst=None,
                  meshes=None,
-                 inpaint=True,
+                 inpaint=False,
                  inpaint_mode="distance",
-                 distance=0.05,
-                 angle=25.0,
+                 distance=0.1,
+                 angle=180.0,
                  sampling_stride=1,
                  apply_rigid_transform=True
     ):
@@ -298,6 +299,9 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             self.rigid_on.setChecked(True)
         else:
             self.rigid_off.setChecked
+
+        isReady = self.checkToExecute()
+        self.execute_button.setEnabled(isReady)
 
     def initUI(self):
         # type: () -> None
@@ -354,7 +358,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         # search settings
         self.settings_group_box = QGroupBox("Settings", self)
 
-        self.rigid_mode_label = QLabel("Rigid Transform:", self)
+        self.rigid_mode_label = QLabel("Maintain Rigid:", self)
         self.rigid_mode_label.setAlignment(Qt.AlignRight)
         self.rigid_mode_label.setFixedWidth(LABEL_WIDTH)
         self.rigid_on = QRadioButton("On", self)
@@ -370,7 +374,6 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.inpaint_onoff_label.setAlignment(Qt.AlignRight)
         self.inpaint_onoff_label.setFixedWidth(LABEL_WIDTH)
         self.inpaint_on = QRadioButton("On", self)
-        self.inpaint_on.setChecked(True)
         self.inpaint_on.toggled.connect(self.inpaintOnOffToggled)
         self.inpaint_off = QRadioButton("Off", self)
         self.inpaint_off.toggled.connect(self.inpaintOnOffToggled)
@@ -402,6 +405,8 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.utility_group_box.setChecked(False)
         self.restructure_button = QPushButton("Restructure Selected", self)
         self.restructure_button.clicked.connect(self.restructureButtonClicked)
+        self.select_inpaint_area_button = QPushButton("Select inpaint area", self)
+        self.select_inpaint_area_button.clicked.connect(self.selectInpaintArea)
 
         # -----------------------------------------------
         self.execute_button = QPushButton("Execute!", self)
@@ -479,6 +484,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         utility_group_box_layout = QHBoxLayout()
         utility_group_box_layout.addWidget(self.restructure_button)
+        utility_group_box_layout.addWidget(self.select_inpaint_area_button)
         self.utility_group_box.setLayout(utility_group_box_layout)
 
         buttons_layout = QHBoxLayout()
@@ -661,7 +667,30 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
     def restructureButtonClicked(self):
         # type: () -> None
         """Restructure the selected meshes."""
-        util.restructure_meshes_hierarchy()
+        suffixs = []
+        if self.rigid_on.isChecked():
+            suffixs.append("rigid")
+        if self.inpaint_on.isChecked():
+            suffixs.append("inpaint")
+        util.restructure_meshes_hierarchy(suffix="_".join(suffixs))
+
+    def selectInpaintArea(self):
+        # type: () -> None
+        """Restructure the selected meshes."""
+        src = self.src_line_edit.text()
+        dsts = [self.ret_list_widget.item(i).text() for i in range(self.ret_list_widget.count())]
+        dist = self.dist_slider.value()
+        angle = self.angle_slider.value()
+
+        if not src:
+            cmds.warning("Please set the source mesh.")
+            return
+
+        if not dsts:
+            cmds.warning("Please set the target mesh.")
+            return
+
+        inpaint.select_inpaint_area(src, dsts, dist, angle)
 
     def checkToExecute(self):
         # type: () -> bool
@@ -696,7 +725,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         dst = self.dst_line_edit.text()
         retarget_meshes = [self.ret_list_widget.item(i).text() for i in range(self.ret_list_widget.count())]
         radius_coeff = self.dist_slider.value()
-        # angle = self.angle_slider.value()
+        angle = self.angle_slider.value()
         sampling_stride = 10
         apply_rigid_transform = self.rigid_on.isChecked()
         inpaint = self.inpaint_on.isChecked()
@@ -707,6 +736,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             meshes=retarget_meshes,
             # kernel=kernel_name,
             radius_coefficient=radius_coeff,
+            angle=angle,
             sampling_stride=sampling_stride,
             apply_rigid_transform=apply_rigid_transform,
             inpaint=inpaint

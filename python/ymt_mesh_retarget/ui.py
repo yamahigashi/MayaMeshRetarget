@@ -729,11 +729,13 @@ def show_ui():
     angle = 25.0
     sampling_stride = 1
     apply_rigid_transform = True
+    pos = None
 
     # close all previous windows
     all_widgets = {w.objectName(): w for w in QApplication.allWidgets()}
     for k, v in all_widgets.items():
         if v.__class__.__name__ == WINDOW_NAME:
+
             src = v.src_line_edit.text()
             dst = v.dst_line_edit.text()
             meshes = [v.ret_list_widget.item(i).text() for i in range(v.ret_list_widget.count())]
@@ -743,8 +745,10 @@ def show_ui():
             angle = v.angle_slider.value()
             sampling_stride = v.stride_slider.value()
             apply_rigid_transform = v.rigid_on.isChecked()
+            pos = v.pos()
 
             v.close()
+            v.deleteLater()
 
     main_widget = MeshRetargetingToolWindow(
         src=src,
@@ -758,5 +762,7 @@ def show_ui():
         apply_rigid_transform=apply_rigid_transform
     )
     main_widget.show()
+    if pos:
+        main_widget.move(pos)
 
     MAIN_WIDGET = main_widget

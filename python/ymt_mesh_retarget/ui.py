@@ -41,8 +41,8 @@ from . import (
     inpaint,
 )
 
-WINDOW_NAME = "MeshRetargetingToolWindow"
-TITLE = "Mesh Retargeting Tool"
+WINDOW_NAME = "RetargetingToolWindow"
+TITLE = "Retargeting Tool"
 LABEL_WIDTH = 90
 
 ########################################################################################################################
@@ -86,6 +86,7 @@ class IntSlider(QWidget):
         layout.addWidget(self.label)
         layout.addWidget(self.slider)
         layout.addWidget(self.value_display)
+
         self.setLayout(layout)
 
     def sizeHint(self):
@@ -259,13 +260,13 @@ class ClickableLineEdit(QLineEdit):
         super(ClickableLineEdit, self).mousePressEvent(event)
 
 
-class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
+class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
     def __init__(self,
                  parent=None,
                  src=None,
                  dst=None,
-                 meshes=None,
+                 objects=None,
                  inpaint=False,
                  inpaint_mode="distance",
                  distance=0.1,
@@ -274,15 +275,15 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
                  apply_rigid_transform=True
     ):
         # type: (QWidget|None, str|None, str|None, list[str]|None, bool, str, float, float, int, bool) -> None
-        super(MeshRetargetingToolWindow, self).__init__(parent)
+        super(RetargetingToolWindow, self).__init__(parent)
 
         self.initUI()
         if src:
             self.src_line_edit.setText(src)
         if dst:
             self.dst_line_edit.setText(dst)
-        if meshes:
-            for mesh in meshes:
+        if objects:
+            for mesh in objects:
                 self.ret_list_widget.addItem(mesh)
         if inpaint:
             self.inpaint_on.setChecked(True)
@@ -307,8 +308,8 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         # type: () -> None
 
         # -----------------------------------------------
-        # source and destination meshes
-        self.meshes_group_box = QGroupBox("Meshes", self)
+        # source and destination object
+        self.meshes_group_box = QGroupBox("Objects", self)
         self.src_label = QLabel("Source:", self)
         self.src_label.setAlignment(Qt.AlignRight)
         self.src_label.setFixedWidth(LABEL_WIDTH)
@@ -316,11 +317,11 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.src_line_edit = ClickableLineEdit(self)
         self.src_line_edit.setReadOnly(True)
         self.src_line_edit.setFocusPolicy(Qt.NoFocus)
-        # self.src_line_edit.double_clicked.connect(self.selectSourceMesh)
-        self.src_line_edit.clicked.connect(self.selectSourceMesh)
+        # self.src_line_edit.double_clicked.connect(self.selectSourceObject)
+        self.src_line_edit.clicked.connect(self.selectSourceObject)
 
         self.src_button = QPushButton("set", self)
-        self.src_button.clicked.connect(self.setMesh)
+        self.src_button.clicked.connect(self.setObject)
         self.src_button.setFixedWidth(50)
         
         self.dst_label = QLabel("Target:", self)
@@ -330,10 +331,10 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.dst_line_edit = ClickableLineEdit(self)
         self.dst_line_edit.setReadOnly(True)
         self.dst_line_edit.setFocusPolicy(Qt.NoFocus)
-        # self.dst_line_edit.double_clicked.connect(self.selectTargetMesh)
-        self.dst_line_edit.clicked.connect(self.selectTargetMesh)
+        # self.dst_line_edit.double_clicked.connect(self.selectTargetObject)
+        self.dst_line_edit.clicked.connect(self.selectTargetObject)
         self.dst_button = QPushButton("set", self)
-        self.dst_button.clicked.connect(self.setMesh)
+        self.dst_button.clicked.connect(self.setObject)
         self.dst_button.setFixedWidth(50)
 
         self.ret_label = QLabel("To Retarget:", self)
@@ -344,15 +345,15 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.ret_list_widget.setFocusPolicy(Qt.NoFocus)
         self.ret_list_widget.setSelectionMode(QAbstractItemView.MultiSelection)
         self.ret_add_button = QPushButton("set", self)
-        self.ret_add_button.clicked.connect(self.addRetargetMesh)
+        self.ret_add_button.clicked.connect(self.addRetargetObject)
         self.ret_add_button.setFixedWidth(50)
         self.ret_remove_button = QPushButton("remove", self)
-        self.ret_remove_button.clicked.connect(self.removeSelectedMeshes)
+        self.ret_remove_button.clicked.connect(self.removeSelectedObjects)
         self.ret_remove_button.setFixedWidth(50)
         self.ret_clear_button = QPushButton("clear", self)
-        self.ret_clear_button.clicked.connect(self.clearSelectedMeshes)
+        self.ret_clear_button.clicked.connect(self.clearSelectedObjects)
         self.ret_clear_button.setFixedWidth(50)
-        self.ret_list_widget.itemClicked.connect(self.selectRetargetMesh)
+        self.ret_list_widget.itemClicked.connect(self.selectRetargetObject)
 
         # -----------------------------------------------
         # search settings
@@ -442,6 +443,28 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         meshes_group_box_layout.addLayout(ret_layout)
         self.meshes_group_box.setLayout(meshes_group_box_layout)
 
+        # # -----------------------------------------------
+        # # オブジェクトタイプの選択UI
+        # self.object_type_label = QLabel("Object Type:", self)
+        # self.object_type_label.setAlignment(Qt.AlignRight)
+        # self.object_type_label.setFixedWidth(LABEL_WIDTH)
+        # self.object_type_mesh = QRadioButton("Mesh", self)
+        # self.object_type_mesh.setChecked(True)
+        # self.object_type_mesh.toggled.connect(self.objectTypeToggled)
+        # self.object_type_joint = QRadioButton("Joint", self)
+        # self.object_type_joint.toggled.connect(self.objectTypeToggled)
+        # self.object_type_transform = QRadioButton("Transform", self)
+        # self.object_type_transform.toggled.connect(self.objectTypeToggled)
+        # 
+        # # 階層維持オプション
+        # self.hierarchy_label = QLabel("Maintain Hierarchy:", self)
+        # self.hierarchy_label.setAlignment(Qt.AlignRight)
+        # self.hierarchy_label.setFixedWidth(LABEL_WIDTH)
+        # self.hierarchy_on = QRadioButton("On", self)
+        # self.hierarchy_on.setChecked(True)
+        # self.hierarchy_off = QRadioButton("Off", self)
+
+        # -----------------------------------------------
         rigid_mode_layout = QHBoxLayout()
         rigid_mode_layout.addWidget(self.rigid_mode_label)
         rigid_mode_layout.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
@@ -508,7 +531,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.setWindowTitle(TITLE)
         self.show()
 
-    def setMesh(self):
+    def setObject(self):
         # type: () -> None
         """Insert text into the line edit."""
 
@@ -537,28 +560,28 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def selectSourceMesh(self):
+    def selectSourceObject(self):
         # type: () -> None
         """Select the source mesh."""
 
-        self.selectMesh(self.src_line_edit.text())
+        self.selectObject(self.src_line_edit.text())
 
-    def selectTargetMesh(self):
+    def selectTargetObject(self):
         # type: () -> None
         """Select the target mesh."""
 
-        self.selectMesh(self.dst_line_edit.text())
+        self.selectObject(self.dst_line_edit.text())
 
-    def selectRetargetMesh(self, item):
+    def selectRetargetObject(self, item):
         # type: (QListWidgetItem) -> None
         """Select the target mesh."""
         if isinstance(item, QListWidgetItem):
             name = item.text()
         else:
             name = item
-        self.selectMesh(name)
+        self.selectObject(name)
 
-    def selectMesh(self, mesh):
+    def selectObject(self, mesh):
         # type: (str) -> None
         """Select the mesh from the line edit."""
 
@@ -581,18 +604,19 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         else:
             cmds.select(mesh)
 
-    def addRetargetMesh(self):
+    def addRetargetObject(self):
         # type: () -> None
-        """Add a mesh to the list of meshes to retarget."""
+        """Add a mesh to the list of objects to retarget."""
 
         selected = cmds.ls(selection=True, type="transform")
         if not selected:
-            cmds.warning("No meshes selected to add.")
+            cmds.warning("No objects selected to add.")
             return
 
         for mesh in selected:
-            if not self.hasMesh(mesh):
-                continue
+            # TODO: implement object type check
+            # if not self.hasMesh(mesh):
+            #     continue
 
             if not self.ret_list_widget.findItems(mesh, Qt.MatchExactly):
                 self.ret_list_widget.addItem(mesh)
@@ -600,11 +624,11 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def removeSelectedMeshes(self):
+    def removeSelectedObjects(self):
         # リスト内で選択されているメッシュを削除
         selected_items = self.ret_list_widget.selectedItems()
         if not selected_items:
-            cmds.warning("No meshes selected to remove.")
+            cmds.warning("No objects selected to remove.")
             return
 
         for item in selected_items:
@@ -613,7 +637,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def clearSelectedMeshes(self):
+    def clearSelectedObjects(self):
         # リスト内の全てのメッシュを削除
         self.ret_list_widget.clear()
         isReady = self.checkToExecute()
@@ -666,7 +690,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
     def restructureButtonClicked(self):
         # type: () -> None
-        """Restructure the selected meshes."""
+        """Restructure the selected objects."""
         suffixs = []
         if self.rigid_on.isChecked():
             suffixs.append("rigid")
@@ -676,7 +700,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
     def selectInpaintArea(self):
         # type: () -> None
-        """Restructure the selected meshes."""
+        """Restructure the selected objects."""
         src = self.src_line_edit.text()
         dsts = [self.ret_list_widget.item(i).text() for i in range(self.ret_list_widget.count())]
         dist = self.dist_slider.value()
@@ -708,7 +732,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         src_vertex_count = cmds.polyEvaluate(self.src_line_edit.text(), vertex=True)
         dst_vertex_count = cmds.polyEvaluate(self.dst_line_edit.text(), vertex=True)
         if src_vertex_count != dst_vertex_count:
-            cmds.warning("Source and target meshes have different vertex counts.")
+            cmds.warning("Source and target objects have different vertex counts.")
             return False
 
         return True
@@ -718,7 +742,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         """Search for vertices to transfer weights from."""
 
         if not self.checkToExecute():
-            cmds.warning("Please set source, target, and retarget meshes.")
+            cmds.warning("Please set source, target, and retarget objects.")
             return
 
         src = self.src_line_edit.text()
@@ -730,10 +754,10 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         apply_rigid_transform = self.rigid_on.isChecked()
         inpaint = self.inpaint_on.isChecked()
 
-        meshes = logic.retarget(
+        objects = logic.retarget(
             source=src,
             target=dst,
-            meshes=retarget_meshes,
+            objects=retarget_meshes,
             # kernel=kernel_name,
             radius_coefficient=radius_coeff,
             angle=angle,
@@ -742,7 +766,7 @@ class MeshRetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             inpaint=inpaint
         )
 
-        cmds.select(meshes)
+        cmds.select(objects)
 
 
 def show_ui():
@@ -752,7 +776,7 @@ def show_ui():
 
     src = None
     dst = None
-    meshes = None
+    objects = None
     inpaint = False
     inpaint_mode = "distance"
     distance = 0.1
@@ -768,7 +792,7 @@ def show_ui():
 
             src = v.src_line_edit.text()
             dst = v.dst_line_edit.text()
-            meshes = [v.ret_list_widget.item(i).text() for i in range(v.ret_list_widget.count())]
+            objects = [v.ret_list_widget.item(i).text() for i in range(v.ret_list_widget.count())]
             inpaint = v.inpaint_on.isChecked()
             inpaint_mode = "distance" if v.inpaint_mode_dist.isChecked() else "selection"
             distance = v.dist_slider.value()
@@ -780,10 +804,10 @@ def show_ui():
             v.close()
             v.deleteLater()
 
-    main_widget = MeshRetargetingToolWindow(
+    main_widget = RetargetingToolWindow(
         src=src,
         dst=dst,
-        meshes=meshes,
+        objects=objects,
         inpaint=inpaint,
         inpaint_mode=inpaint_mode,
         distance=distance,

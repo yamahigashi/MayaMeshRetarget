@@ -25,6 +25,7 @@ import time
 
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
 
 from maya.api import (
@@ -36,10 +37,16 @@ from maya import (
 )
 
 from . import (
-    inpaint,
-    cluster,
+    # inpaint,
+    # cluster,
     util,
 )
+
+from .objects import (
+    create_retargetable_object,
+    MeshObject,
+)
+from .objects.base import RetargetableObject  # noqa: F401
 
 if sys.version_info[0] >= 3:
     import typing  # noqa: F401
@@ -160,11 +167,11 @@ def __select_rbf_kernel(kernel_name):
     return kernels[kernel_name]
 
 
-def __calculate_rbf_weight_matrix(source_points, target_points, kernel, radius):
+def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius):
     # type: (np.ndarray, np.ndarray, Kernel, float) -> np.ndarray
     """Calculate the weight matrix for the RBF interpolation."""
     identity = np.ones((source_points.shape[0], 1))
-    dist = __get_distance_matrix(source_points, source_points, kernel, radius)
+    dist = get_distance_matrix(source_points, source_points, kernel, radius)
     dim = 3
     a = np.bmat([
         [dist, identity, source_points],
@@ -175,7 +182,7 @@ def __calculate_rbf_weight_matrix(source_points, target_points, kernel, radius):
     return np.linalg.solve(a, b)
 
 
-def __get_distance_matrix(v1, v2, kernel, radius):
+def get_distance_matrix(v1, v2, kernel, radius):
     # type: (np.ndarray, np.ndarray, Kernel, float) -> np.ndarray
     """Calculate the distance matrix between two sets of points using the specified RBF."""
     matrix = cdist(v1, v2, "euclidean")
@@ -191,20 +198,21 @@ def __get_distance_matrix(v1, v2, kernel, radius):
 def retarget(
         source,
         target,
-        meshes,
+        objects,
         kernel=RBF.linear,
         radius_coefficient=0.0005,
         angle=180.0,
         sampling_stride=1,
         apply_rigid_transform=False,
-        inpaint=True
+        inpaint=True,
+        maintain_hierarchy=True
 ):
-    # type: (str, str, list[str]|str, Kernel|str, float, float, int, bool, bool) -> list[str]
+    # type: (str, str, list[str]|str, Kernel|str, float, float, int, bool, bool, bool) -> list[str]
     """Run the mesh retarget
 
     :param source: Source mesh
     :param target: Modified source mesh
-    :param meshes: List of meshes to retarget
+    :param objects: List of retargetable objects
     :param kernel: One of the RBF functions. See class RBF
     :param radius_coefficient: Smoothing parameter for the RBF
     :param sampling_stride: Vertex stride to sample on the source mesh. Increase to speed
@@ -212,70 +220,74 @@ def retarget(
     :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
     :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices
     """
+    source_obj = create_retargetable_object(source)
+    target_obj = create_retargetable_object(target)
+
     source_dag = util.get_mesh_dag(source)
     target_dag = util.get_mesh_dag(target)
 
-    if isinstance(meshes, str):
-        meshes = [meshes]
+    retarget_objects = []
+    for obj in objects:
+        ret = create_retargetable_object(obj)
+        if ret is not None:
+            retarget_objects.append(ret)
+
+    # if isinstance(meshes, str):
+    #     meshes = [meshes]
 
     if isinstance(kernel, str):
         kernel = __select_rbf_kernel(kernel)
 
-    meshes_dag = [util.get_mesh_dag(mesh) for mesh in meshes]
-    meshes_dag = [m for m in meshes_dag if m is not None]
-
-    # Remove duplicate meshes, MDagPath could not be compared directly and is not hashable
-    tmp = []
-    tmp2 = []
-    for dag in meshes_dag:
-        name = dag.fullPathName()
-        if name not in tmp:
-            tmp2.append(dag)
-            tmp.append(name)
-
-    meshes_dag = tmp2
-
-    if not source_dag or not target_dag or not meshes_dag:
-        raise ValueError("Invalid mesh name")
-
     start_time = time.time()
+
+    bar = mel.eval("$tmp = $gMainProgressBar")
+    if not cmds.about(batch=True):
+        cmds.progressBar(
+                bar,
+                edit=True,
+                beginProgress=True,
+                status="Preparing Retargeting",
+                maxValue=100)
+    
     try:
-        deformed_meshes = __retarget(
-                source_dag,
-                target_dag,
-                meshes_dag,
-                kernel,
-                radius_coefficient,
-                angle,
-                sampling_stride,
-                apply_rigid_transform,
-                inpaint)
-
-    except Exception:
-        import traceback
-        traceback.print_exc()
+        # リターゲット処理の実行
+        result = __retarget(
+            source_obj,
+            target_obj,
+            retarget_objects,
+            kernel,
+            radius_coefficient,
+            angle,
+            sampling_stride,
+            apply_rigid_transform,
+            inpaint,
+            maintain_hierarchy
+        )
+        return result
     finally:
-        bar = mel.eval("$tmp = $gMainProgressBar")
-        cmds.progressBar(bar, edit=True, endProgress=True)
+        # 進捗バーの終了
+        if not cmds.about(batch=True):
+            cmds.progressBar(bar, edit=True, endProgress=True)
 
-    end_time = time.time()
-    print(f"Retargeting completed in {end_time - start_time:.2f} seconds ({kernel.__name__})")
+        end_time = time.time()
+        print(f"Retargeting completed in {end_time - start_time:.2f} seconds ({kernel.__name__})")
 
-    return [m.fullPathName() for m in deformed_meshes]
+    # return [m.fullPathName() for m in deformed_meshes]
 
 
 def __retarget(
-        source_path,
-        target_path,
-        mesh_paths,
+        source_obj,
+        target_obj,
+        retarget_objects,
         kernel,
         radius_coefficient,
         angle,
         sampling_stride,
         apply_rigid_transform,
-        inpaint
+        inpaint,
+        maintain_hierarchy
 ):
-    # type: (om.MDagPath, om.MDagPath, list[om.MDagPath], Kernel, float, float, int, bool, bool) -> list[om.MDagPath]
+    # type: (RetargetableObject, RetargetableObject, list[RetargetableObject], Kernel, float, float, int, bool, bool, bool) -> list[om.MDagPath]
     """Run the mesh retarget.
     :param source: Source mesh
     :param target: Modified source mesh
@@ -289,159 +301,235 @@ def __retarget(
     """
 
     # Extract points from source and target meshes
-    source_points = util.convert_points_to_numpy(source_path, sampling_stride)
-    target_points = util.convert_points_to_numpy(target_path, sampling_stride)
+    source_points = source_obj.get_points(sampling_stride)
+    target_points = target_obj.get_points(sampling_stride)
 
     if source_points.shape != target_points.shape:
         raise ValueError("Source and target meshes must have the same number of vertices")
 
-    bar = mel.eval("$tmp = $gMainProgressBar")
-    if not cmds.about(batch=True):
-        cmds.progressBar(
-                bar,
-                edit=True,
-                beginProgress=True,
-                status="Prepare Retargeting",
-                maxValue=100)
-
-    # Get the weight matrix
-    radius = util.calculate_threshold_distance(source_path, radius_coefficient)
-    weights = __calculate_rbf_weight_matrix(source_points, target_points, kernel, radius_coefficient)
-
-    deformed_points = __calculate_rbf_deformed_positions(
-            source_path,
-            mesh_paths,
-            source_points,
+    radius = source_obj.calculate_threshold_distance(radius_coefficient)
+    weights = calculate_rbf_weight_matrix(source_points, target_points, kernel, radius)
+    
+    # オブジェクトごとに処理
+    results = []
+    for obj in retarget_objects:
+        # オブジェクトの複製
+        new_obj = obj.duplicate()
+        print(f"Processing {new_obj.name}")
+        
+        # 変形処理（オブジェクトのタイプに応じた処理が内部で実行される）
+        __apply_rbf_deformation(
+            source_obj,
+            target_obj,
+            obj,
+            new_obj,
             weights,
             kernel,
             radius_coefficient,
             angle,
+            sampling_stride,
             apply_rigid_transform,
-            inpaint)
-
-    if not cmds.about(batch=True):
-        cmds.progressBar(
-                bar,
-                edit=True,
-                beginProgress=True,
-                status="Calculate deformed positions",
-                maxValue=len(mesh_paths))
-
-    deformed_meshes = []
-    for mesh_name, position in deformed_points.items():
-        mesh_path = util.get_mesh_dag(mesh_name)
-        if not mesh_path:
-            print(f"Invalid mesh name: {mesh_name}")
-            continue
-
-        deformed = __apply_deformed_vertex_positions(mesh_path, position, apply_rigid_transform, inpaint)
-        deformed_meshes.append(deformed)
-
-        if not cmds.about(batch=True):
-            cmds.progressBar(bar, edit=True, step=1)
-
-    if not cmds.about(batch=True):
-        cmds.progressBar(bar, edit=True, endProgress=True)
-
-    return deformed_meshes
+            inpaint,
+            maintain_hierarchy
+        )
+        
+        results.append(new_obj.name)
+    
+    return results
 
 
 @util.timeit
-def __calculate_rbf_deformed_positions(
-        source_path,
-        mesh_paths,
-        source_points,
+def __apply_rbf_deformation(
+        source_obj,
+        target_obj,
+        original_obj,
+        new_obj,
         weights,
         kernel,
         radius_coefficient,
         angle,
+        sampling_stride=1,
         apply_rigid_transform=False,
-        do_inpaint=True
+        inpaint=True,
+        maintain_hierarchy=True
 ):
-    # type: (om.MDagPath, list[om.MDagPath], np.ndarray, np.ndarray, Kernel, float, float, bool, bool) -> dict[str, np.ndarray]
-    """Applies the retargeting process to a single mesh
-
-    Clusters the vertices of the mesh based on skinning weights and topology,
-    then computes the deformed points using the RBF interpolation and updates the mesh.
-
-    :param mesh_path: The mesh to deform
-    :param source_points: The source mesh vertices
-    :param weights: The weight matrix for the RBF interpolation
-    :param kernel: The RBF kernel function
-    :param radius: The radius parameter for the RBF
-    :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
+    """RBF変形を適用する関数
+    
+    異なるオブジェクトタイプに共通のRBF変形処理を実装
+    
+    :param source_obj: ソースオブジェクト (RetargetableObject)
+    :param target_obj: ターゲットオブジェクト (RetargetableObject)
+    :param original_obj: 変形元オブジェクト (RetargetableObject)
+    :param new_obj: 変形先オブジェクト (RetargetableObject)
+    :param weights: RBFの重み行列
+    :param kernel: RBFカーネル関数
+    :param radius_coefficient: 半径係数
+    :param angle: 角度閾値（インペイント用）
+    :param sampling_stride: サンプリング間隔
+    :param apply_rigid_transform: 剛体変換を適用するか
+    :param inpaint: インペイントを適用するか
+    :param maintain_hierarchy: 階層構造を維持するか
     """
-
-    all_points = []
-    all_distances = []
-    indices_map = {}
-    vertex_offset = 0
-    radius = util.calculate_threshold_distance(source_path, radius_coefficient)
-
-    bar = mel.eval("$tmp = $gMainProgressBar")
-    if not cmds.about(batch=True):
-        cmds.progressBar(
-                bar,
-                edit=True,
-                beginProgress=True,
-                status="Calculate deformed positions",
-                maxValue=len(mesh_paths))
-
-    for mesh_path in mesh_paths:
-
-        mesh_name = mesh_path.fullPathName()
-        dist, points = __calculate_mesh_distance_matrix(
-                source_points,
-                mesh_path,
-                kernel,
-                radius,
-                weights,
-                apply_rigid_transform)
-
-        indices_map[mesh_name] = np.arange(vertex_offset, vertex_offset + points.shape[0])
-        vertex_offset += points.shape[0]
-
-        all_points.append(points)
-        all_distances.append(dist)
-        if not cmds.about(batch=True):
-            cmds.progressBar(bar, edit=True, step=1)
-
-    # Concatenate all data along the first axis (rows)
-    combined_points = np.vstack(all_points)
-    combined_distances = np.vstack(all_distances)
-    if apply_rigid_transform:
-        labels = cluster.cluster_vertices(mesh_paths)
-    else:
-        labels = np.full(vertex_offset, -1, dtype=int)
-
-    identity = np.ones((combined_points.shape[0], 1))
-
-    if do_inpaint:
-        combined_distances = inpaint.inpaint_distance(
-            source_path,
-            mesh_paths,
-            combined_distances,
-            labels,
-            threshold_dist_coefficient=radius_coefficient,
-            threshold_angle=angle,
-        )
-
-    h_combined = np.bmat([[combined_distances, identity, combined_points]])
+    # ソース点群とオブジェクトの点群を取得
+    source_points = source_obj.get_points(sampling_stride)
+    object_points = original_obj.get_points()
+    
+    # 半径を計算
+    radius = source_obj.calculate_threshold_distance(radius_coefficient)
+    
+    # ソースとオブジェクト間の距離行列を計算
+    distances = get_distance_matrix(object_points, source_points, kernel, radius)
+    
+    # オブジェクトの完全な変換情報を取得
+    transforms = original_obj.get_transforms()
+    
+    # メッシュ特有の処理（クラスタリングとインペイント）
+    labels = None
+    if apply_rigid_transform and isinstance(original_obj, MeshObject):
+        # メッシュの場合はクラスタリングを実行
+        labels = original_obj.cluster_vertices()
+        
+        if inpaint:
+            # 距離行列のインペイント
+            distances = original_obj.inpaint_distance_matrix(
+                source_obj.dag_path, distances, labels, 
+                radius_coefficient, angle
+            )
+    
+    # RBF補間を使用して変換後のポイントを計算
+    identity = np.ones((object_points.shape[0], 1))
+    h_combined = np.bmat([[distances, identity, object_points]])
     deformed_points = np.dot(h_combined, weights)
-
-    if apply_rigid_transform:
-        deformed_points = __apply_uniform_scale_to_clusters(
-            combined_points,
+    
+    # 変換情報構造体を更新
+    for i, transform in enumerate(transforms):
+        # インデックスが範囲内にあることを確認
+        if i < len(deformed_points):
+            transform["position"] = deformed_points[i]
+   
+    # TODO: implement later
+    # 回転とスケールの処理（メッシュ以外の場合）
+    # if not isinstance(original_obj, MeshObject):
+    #     # ソースとターゲットの変換情報
+    #     source_transforms = source_obj.get_transforms()
+    #     target_transforms = target_obj.get_transforms()
+    #     
+    #     # 各変換情報に対して処理
+    #     for i, transform in enumerate(transforms):
+    #         # 最も近いソースポイントを見つける
+    #         source_positions = np.array([t["position"] for t in source_transforms])
+    # 
+    #         closest_idx = np.argmin(np.sum((transform["position"] - source_positions)**2, axis=1))
+    #         
+    #         # 回転の補間
+    #         if "rotation" in transform and closest_idx < len(source_transforms):
+    #             source_rot = Rotation.from_quat(source_transforms[closest_idx]["rotation"])
+    #             target_rot = Rotation.from_quat(target_transforms[closest_idx]["rotation"])
+    #             
+    #             # ソースからターゲットへの相対回転を計算
+    #             rel_rot = source_rot.inv() * target_rot
+    #             
+    #             # 元の回転に相対回転を適用
+    #             orig_rot = Rotation.from_quat(transform["rotation"])
+    #             transform["rotation"] = (orig_rot * rel_rot).as_quat()
+    #         
+    #         # スケールの補間
+    #         if "scale" in transform and closest_idx < len(source_transforms):
+    #             source_scale = source_transforms[closest_idx]["scale"]
+    #             target_scale = target_transforms[closest_idx]["scale"]
+    #             
+    #             # スケール比率を計算
+    #             scale_ratio = target_scale / np.maximum(source_scale, 1e-6)
+    #             transform["scale"] = transform["scale"] * scale_ratio
+    
+    # 剛体変換の適用（メッシュのクラスタリング時）
+    if apply_rigid_transform and labels is not None:
+        transforms = __apply_rigid_transform_to_clusters(
+            original_obj.get_points(), 
             deformed_points,
             labels,
-            weights)
+            transforms
+        )
+    
+    # 変換を新しいオブジェクトに適用
+    new_obj.apply_transforms(transforms)
+    
+    # 階層構造を処理（maintain_hierarchyがTrueの場合）
+    if maintain_hierarchy:
+        # 子オブジェクトを処理
+        children = original_obj.get_children()
+        for child in children:
+            # 子オブジェクトの複製は既に行われているはず（ジョイント階層など）
+            # 対応する新しい子オブジェクトを見つける
+            new_child_name = f"{child.name.split('|')[-1]}_retarget"
+            new_child = None
+            
+            for potential_child in new_obj.get_children():
+                if potential_child.name.endswith(new_child_name):
+                    new_child = potential_child
+                    break
+            
+            if new_child:
+                # 子オブジェクトに対しても再帰的に処理を適用
+                __apply_rbf_deformation(
+                    source_obj, target_obj, child, new_child,
+                    weights, kernel, radius_coefficient, angle,
+                    sampling_stride, apply_rigid_transform, inpaint, maintain_hierarchy
+                )
 
-    deformed_positions = {}  # type: dict[str, np.ndarray]
-    for mesh_path in mesh_paths:
-        indices = indices_map[mesh_path.fullPathName()]
-        deformed_positions[mesh_path.fullPathName()] = deformed_points[indices]
-
-    return deformed_positions
+@util.timeit
+def __apply_rigid_transform_to_clusters(
+        before_points,
+        after_points,
+        labels,
+        transforms
+):
+    """クラスターごとに剛体変換を適用"""
+    unique_clusters = np.unique(labels[labels >= 0])
+    
+    for cluster_id in unique_clusters:
+        # クラスターに属するインデックスを取得
+        cluster_indices = np.where(labels == cluster_id)[0]
+        
+        # クラスターの点群
+        before_cluster_points = before_points[cluster_indices]
+        after_cluster_points = after_points[cluster_indices]
+        
+        # PCA分析によるRST変換の適用
+        # 平均位置の計算
+        mean_before = np.mean(before_cluster_points, axis=0)
+        mean_after = np.mean(after_cluster_points, axis=0)
+        
+        # 中心化
+        centered_before = np.asarray(before_cluster_points - mean_before)
+        centered_after = np.asarray(after_cluster_points - mean_after)
+        
+        # PCA分析
+        pca_before = PCA(n_components=min(3, before_cluster_points.shape[0]))
+        pca_before.fit(centered_before)
+        
+        pca_after = PCA(n_components=min(3, after_cluster_points.shape[0]))
+        pca_after.fit(centered_after)
+        
+        # スケール係数の計算
+        before_extent = np.sqrt(pca_before.explained_variance_)
+        after_extent = np.sqrt(pca_after.explained_variance_)
+        scale_factors = after_extent / np.maximum(before_extent, 1e-6)
+        uniform_scale = np.mean(scale_factors)
+        
+        # PCA空間でのスケーリング
+        transformed_points = centered_before @ pca_before.components_.T
+        scaled_points = transformed_points * uniform_scale
+        
+        # 元の空間に戻す
+        rigid_transformed_points = scaled_points @ pca_before.components_ + mean_after
+        
+        # 変換情報を更新
+        for i, idx in enumerate(cluster_indices):
+            if idx < len(transforms):
+                transforms[idx]["position"] = rigid_transformed_points[i]
+    
+    return transforms
 
 
 @util.timeit
@@ -471,7 +559,7 @@ def __calculate_mesh_distance_matrix(source_points, mesh_path, kernel, radius, w
 
     points = util.convert_points_to_numpy(mesh_path)
 
-    dist = __get_distance_matrix(points, source_points, kernel, radius)
+    dist = get_distance_matrix(points, source_points, kernel, radius)
 
     return dist, points
 

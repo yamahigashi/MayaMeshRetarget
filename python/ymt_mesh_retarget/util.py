@@ -185,7 +185,7 @@ def get_skin_weight_as_sparse_matrix(mesh_path):
 
 
 def set_points(mesh, points):
-    # type: (str, list[om.MPoint]) -> None
+    # type: (str, list[om.MPoint]|om.MPointArray) -> None
     """Set the deformed points to the mesh."""
     mesh_fn = get_mesh_fn(mesh)
     mesh_fn.setPoints(points)

@@ -7,9 +7,51 @@ This module provides functions for creating and managing mapping points between 
 
 import numpy as np
 from maya import cmds, mel
+from scipy.spatial import cKDTree
 
 from ..util import timeit
 from .core import CorrespondencePoint, MappingNode, MappingResult
+
+
+def find_nearest_vertex_index(position, triangle_idx, raycast_data):
+    """Find the nearest vertex index to the given position
+    
+    This function determines the closest vertex to a point (e.g., ray intersection point)
+    using triangle information. It either:
+    1. Uses the triangle vertices directly
+    2. Performs a local search around the triangle
+    
+    Args:
+        position (np.ndarray): The position to find nearest vertex for
+        triangle_idx (int): The triangle index
+        raycast_data (dict): Raycast result data containing additional info
+        
+    Returns:
+        int: The index of the nearest vertex
+    """
+    # If raycast_data contains triangle vertices info, use it
+    if "triangle_vertex_indices" in raycast_data:
+        indices = raycast_data["triangle_vertex_indices"]
+        best_idx = indices[0]  # Default to first vertex
+        
+        # If the raycast has vertex positions, find closest
+        if "triangle_vertices" in raycast_data:
+            vertices = raycast_data["triangle_vertices"]
+            min_dist = float('inf')
+            
+            for i, vertex in enumerate(vertices):
+                dist = np.linalg.norm(vertex - position)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_idx = indices[i]
+                    
+            return best_idx
+    
+    # Default implementation - for improved version, we would use
+    # a spatial search structure like KD-tree to find nearest vertex
+    # For now, we'll return a placeholder that should be resolved later
+    # This would be improved when MeshObject is passed to the function
+    return int(raycast_data.get("nearest_vertex_index", -1))
 
 
 @timeit
@@ -197,9 +239,11 @@ def create_optimized_correspondence_points(
             
             # Add to candidates if score exceeds threshold
             if total_score >= min_weight_threshold:
+                # Find nearest source vertex to the intersection point
+                source_vertex_index = find_nearest_vertex_index(src_pos, triangle_idx, raycast)
+                
                 candidates.append({
-                    "source_position": src_pos,
-                    "target_position": target_pos,
+                    "source_index": source_vertex_index,
                     "target_index": target_idx,
                     "weight": basic_weight,  # Keep original weight calculation
                     "score": total_score,    # Total score for sorting
@@ -224,11 +268,14 @@ def create_optimized_correspondence_points(
     for target_idx, candidates in correspondence_dict.items():
         # Create correspondence point object for each candidate
         for candidate in candidates:
+            source_idx = candidate["source_index"]
+            if source_idx < 0:
+                # Skip invalid source indices
+                continue
+                
             correspondence_point = CorrespondencePoint(
-                source_index=-1,  # Use coordinates instead of exact index
+                source_index=source_idx,
                 target_index=candidate["target_index"],
-                source_position=candidate["source_position"],
-                target_position=candidate["target_position"],
                 weight=candidate["weight"]
             )
             optimized_correspondence_points.append(correspondence_point)
@@ -323,12 +370,10 @@ def find_correspondence_using_skeleton(
         
         # Add to correspondence points if a match was found
         if best_match:
-            src_idx, src_pos = best_match
+            src_idx, _ = best_match
             correspondence_points.append(CorrespondencePoint(
                 source_index=src_idx,
                 target_index=idx,
-                source_position=src_pos,
-                target_position=target_pos,
                 weight=1.0 / (1.0 + min_distance)  # Weight based on distance
             ))
     

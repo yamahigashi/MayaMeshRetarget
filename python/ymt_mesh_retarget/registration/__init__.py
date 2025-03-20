@@ -37,7 +37,7 @@ from .mapping import (
 )
 
 from .weights import (
-    weight_transform,
+    # weight_transform,
     get_weight_distance
 )
 
@@ -64,6 +64,6 @@ __all__ = [
     # Utility functions
     "rand_cone_vector", "ray_triangle_intersection", "triangle_interpolation",
     "build_embree_scene_from_source", "create_optimized_correspondence_points",
-    "weight_transform", "get_weight_distance",
+    "get_weight_distance",
     "calculate_alignment_transform", "calculate_alignment_transform_rbf", "match_joint_trees"
 ]

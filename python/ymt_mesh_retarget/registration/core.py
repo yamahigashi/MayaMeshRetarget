@@ -14,12 +14,18 @@ from maya.api import OpenMaya as om
 
 @dataclass
 class CorrespondencePoint:
-    """Data class for storing correspondence point information"""
+    """Data class for storing correspondence point information
+    
+    This data class stores vertex indices instead of positions to allow for
+    more efficient coordinate access and transformation through the mesh function set.
+    """
     source_index: int  # Vertex index in source mesh
     target_index: int  # Vertex index in target mesh
-    source_position: np.ndarray  # Position in source mesh (3, )
-    target_position: np.ndarray  # Position in target mesh (3, )
     weight: float = 1.0  # Weight (confidence) of the correspondence point
+    
+    # Deprecated - kept for backward compatibility
+    source_position: Optional[np.ndarray] = None  # Position in source mesh (3, )
+    target_position: Optional[np.ndarray] = None  # Position in target mesh (3, )
 
 
 @dataclass

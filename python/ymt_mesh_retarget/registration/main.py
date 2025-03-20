@@ -17,11 +17,14 @@ from ..util import timeit, get_skin_cluster
 from ..objects import MeshObject, create_retargetable_object
 
 # Import from submodules
-from .core import CorrespondencePoint
-from .mapping import get_mapping_points, find_correspondence_using_skeleton
+from .core import CorrespondencePoint  # noqa: F401
+from .mapping import (
+    get_mapping_points,
+    find_correspondence_using_skeleton,
+    create_optimized_correspondence_points
+)
 from .raycast import perform_raycast
 from .alignment import calculate_alignment_transform, get_joint_tree
-from .weights import weight_transform
 
 
 class MeshRegistration:
@@ -136,6 +139,8 @@ class MeshRegistration:
         print(f"Finding correspondences with {sample_number} rays at {sample_degree} degrees...")
          
         raycast_result_array = perform_raycast(
+            self.source_mesh,
+            self.target_mesh,
             tar_mapping_points,
             src_triangles=source_points,       # (Ns,3)
             src_triangle_indices=src_triangle_indices,
@@ -148,7 +153,6 @@ class MeshRegistration:
         )
         
         # Create correspondence points
-        from .mapping import create_optimized_correspondence_points
         self.correspondence_points = create_optimized_correspondence_points(
             raycast_result_array,
             tar_mapping_points,
@@ -176,24 +180,44 @@ class MeshRegistration:
         else:
             print(f"Found {len(self.correspondence_points)} correspondence points with advanced method.")
         
-        # Extract point arrays from correspondence points
-        source_points = np.array([cp.source_position for cp in self.correspondence_points])
-        target_points = np.array([cp.target_position for cp in self.correspondence_points])
+        # Extract point arrays from correspondence points using mesh function sets
+        source_indices = [cp.source_index for cp in self.correspondence_points]
+        target_indices = [cp.target_index for cp in self.correspondence_points]
+        
+        # Get points using the mesh function sets
+        source_mesh_fn = self.source_mesh.mesh_fn
+        target_mesh_fn = self.target_mesh.mesh_fn
+        
+        # Create point arrays
+        source_points = np.zeros((len(source_indices), 3))
+        target_points = np.zeros((len(target_indices), 3))
+        
+        # Extract vertex positions directly from mesh function sets
+        for i, idx in enumerate(source_indices):
+            if idx >= 0:  # Skip invalid indices
+                point = source_mesh_fn.getPoint(idx)
+                source_points[i] = [point.x, point.y, point.z]
+        
+        for i, idx in enumerate(target_indices):
+            if idx >= 0:  # Skip invalid indices
+                point = target_mesh_fn.getPoint(idx)
+                target_points[i] = [point.x, point.y, point.z]
         
         # Restore original coordinates if alignment was used
         if align_spaces and transform_matrix is not None and original_joint_positions is not None:
             print("Restoring source bone positions to original space...")
             
-            # First restore original joint positions
+            # Restore original joint positions
             for i, joint in enumerate(src_joint_group):
                 joint.position = original_joint_positions[i]
                 pos_array = np.array(joint.position).squeeze()
                 cmds.xform(joint.path.fullPathName(), ws=True, t=pos_array)
             
-            # Note: Further code to transform the correspondence points back
-            # would be implemented here if needed
+            # Note: Since we're now using vertex indices instead of positions,
+            # we don't need to manually transform the correspondence points
+            # They will be automatically updated when we query the mesh
             
-            print("Source points and bones restored to original space.")
+            print("Source bones restored to original space.")
         
         print("Correspondence search completed.")
         print(f"Source points: {source_points.shape}, Target points: {target_points.shape}")
@@ -280,18 +304,30 @@ class MeshRegistration:
         # Create group node for lines
         group_name = cmds.group(empty=True, name="correspondence_visualization")
         
+        # Get mesh function sets
+        source_mesh_fn = self.source_mesh.mesh_fn
+        target_mesh_fn = self.target_mesh.mesh_fn
+        
         # Draw line for each correspondence point
         for i, cp in enumerate(self.correspondence_points):
+            # Skip invalid indices
+            if cp.source_index < 0 or cp.target_index < 0:
+                continue
+                
             # Set line color based on weight (red-yellow-green)
             color = [1, min(cp.weight * 2, 1), 0]  # Higher weight is more yellow
             
-            src_x = float(cp.source_position[0])
-            src_y = float(cp.source_position[1])
-            src_z = float(cp.source_position[2])
+            # Get vertex positions directly from mesh
+            source_point = source_mesh_fn.getPoint(cp.source_index)
+            target_point = target_mesh_fn.getPoint(cp.target_index)
             
-            tar_x = float(cp.target_position[0])
-            tar_y = float(cp.target_position[1])
-            tar_z = float(cp.target_position[2])
+            src_x = float(source_point.x)
+            src_y = float(source_point.y)
+            src_z = float(source_point.z)
+            
+            tar_x = float(target_point.x)
+            tar_y = float(target_point.y)
+            tar_z = float(target_point.z)
             
             # Draw line
             line_name = f"corr_line_{i}"

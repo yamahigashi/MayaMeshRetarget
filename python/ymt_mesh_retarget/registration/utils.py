@@ -189,6 +189,13 @@ def get_default_registration_options() -> RegistrationOptions:
     Returns:
         Default RegistrationOptions
     """
+    import multiprocessing
+    
+    # Determine optimal number of threads based on CPU count
+    # Use a reasonable default based on available cores, but limit to avoid system overload
+    cpu_count = multiprocessing.cpu_count()
+    default_threads = max(2, min(cpu_count - 1, 8))
+    
     return RegistrationOptions(
         sample_rate=0.5,        # 50% of vertices
         sample_number=32,       # 32 rays per point
@@ -200,7 +207,9 @@ def get_default_registration_options() -> RegistrationOptions:
         distance_weight=1.0,    # Distance weight
         ray_weight=0.5,         # Ray weight
         max_triangles=-1,       # No triangle limit
-        batch_size=1024         # Process 1024 rays at a time
+        batch_size=1024,        # Process 1024 rays at a time
+        num_threads=default_threads,  # Use CPU core count-based threading
+        use_bvh=True            # Use BVH acceleration by default
     )
 
 
@@ -215,6 +224,8 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
     Returns:
         Validated and normalized RegistrationOptions
     """
+    import multiprocessing
+    
     options.sample_rate = max(0.01, min(1.0, options.sample_rate))
     options.sample_number = max(4, min(128, options.sample_number))
     options.sample_degree = max(1.0, min(180.0, options.sample_degree))
@@ -222,6 +233,10 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
     options.max_points_per_target = max(1, min(10, options.max_points_per_target))
     options.min_weight_threshold = max(0.0, min(1.0, options.min_weight_threshold))
     options.batch_size = max(64, min(4096, options.batch_size))
+    
+    # Validate thread count (1 to max available CPUs)
+    cpu_count = multiprocessing.cpu_count()
+    options.num_threads = max(1, min(cpu_count, options.num_threads))
     
     return options
 

@@ -274,6 +274,8 @@ class RegistrationOptions:
         ray_weight: Weight coefficient for ray quality in scoring
         max_triangles: Maximum triangles to process (-1 for unlimited)
         batch_size: Batch size for ray processing
+        num_threads: Number of threads to use for parallel processing
+        use_bvh: Whether to use BVH acceleration for standard raycast engine
     """
     sample_rate: float = 1.0
     sample_number: int = 32
@@ -286,3 +288,5 @@ class RegistrationOptions:
     ray_weight: float = 0.5
     max_triangles: int = -1
     batch_size: int = 1024
+    num_threads: int = 4
+    use_bvh: bool = True

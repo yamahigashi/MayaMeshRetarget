@@ -10,7 +10,8 @@ with different vertex counts.
 Main features:
 - Correspondence search using skeletal information
 - Vertex sampling and reduction
-- Visualization of mesh registration results
+- Raycast-based point matching
+- Joint-based alignment
 """
 
 from .core import (
@@ -19,7 +20,9 @@ from .core import (
     MappingResult,
     JointNode,
     BoneNode,
-    TriangleWeightIndex
+    TriangleWeightIndex,
+    RaycastResult,
+    RegistrationOptions
 )
 
 from .geometry import (
@@ -28,23 +31,35 @@ from .geometry import (
     triangle_interpolation
 )
 
-from .raycast import (
-    build_embree_scene_from_source
-)
-
-from .mapping import (
-    create_optimized_correspondence_points
-)
-
-from .weights import (
-    # weight_transform,
-    get_weight_distance
-)
-
 from .alignment import (
     calculate_alignment_transform,
     calculate_alignment_transform_rbf,
+    get_joint_tree,
     match_joint_trees
+)
+
+from .mapping import (
+    get_mapping_points,
+    create_optimized_correspondence_points,
+    find_correspondence_using_skeleton
+)
+
+from .raycast import (
+    build_embree_scene_from_source,
+    perform_raycast
+)
+
+from .utils import (
+    get_matched_info,
+    find_root_joints,
+    scale_joint_hierarchy_to_mesh,
+    match_joint_positions,
+    get_default_registration_options,
+    validate_registration_options
+)
+
+from .weights import (
+    get_weight_distance
 )
 
 # Reexport main class and functions from main module
@@ -54,16 +69,46 @@ from .main import (
 )
 
 __all__ = [
-    # Core data structures
-    "CorrespondencePoint", "MappingNode", "MappingResult", 
-    "JointNode", "BoneNode", "TriangleWeightIndex",
+    # Core data classes
+    'CorrespondencePoint',
+    'MappingNode',
+    'MappingResult',
+    'JointNode',
+    'BoneNode',
+    'TriangleWeightIndex',
+    'RaycastResult',
+    'RegistrationOptions',
     
-    # Main functionality
-    "MeshRegistration", "find_correspondence_pairs",
+    # Main class and functions
+    'MeshRegistration',
+    'find_correspondence_pairs',
+    
+    # Alignment functions
+    'calculate_alignment_transform',
+    'calculate_alignment_transform_rbf',
+    'get_joint_tree',
+    'match_joint_trees',
+    
+    # Mapping functions
+    'get_mapping_points',
+    'create_optimized_correspondence_points',
+    'find_correspondence_using_skeleton',
+    
+    # Geometry functions
+    'rand_cone_vector',
+    'ray_triangle_intersection', 
+    'triangle_interpolation',
+    
+    # Raycast functions
+    'build_embree_scene_from_source',
+    'perform_raycast',
     
     # Utility functions
-    "rand_cone_vector", "ray_triangle_intersection", "triangle_interpolation",
-    "build_embree_scene_from_source", "create_optimized_correspondence_points",
-    "get_weight_distance",
-    "calculate_alignment_transform", "calculate_alignment_transform_rbf", "match_joint_trees"
+    'get_matched_info',
+    'find_root_joints',
+    'scale_joint_hierarchy_to_mesh',
+    'match_joint_positions',
+    'get_default_registration_options',
+    'validate_registration_options',
+    'get_weight_distance'
 ]

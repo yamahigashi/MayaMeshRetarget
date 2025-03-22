@@ -20,12 +20,11 @@ Usage:
 3. Run the retargeting function to apply the transformation to a target mesh or set of meshes.
 
 """
-import sys
 import time
 
 import numpy as np
 from scipy.spatial.distance import cdist
-from scipy.spatial.transform import Rotation
+# from scipy.spatial.transform import Rotation  # TODO: implement later
 from sklearn.decomposition import PCA
 
 from maya.api import (
@@ -48,13 +47,12 @@ from .objects import (
 )
 from .objects.base import RetargetableObject  # noqa: F401
 
-if sys.version_info[0] >= 3:
-    import typing  # noqa: F401
-    if typing.TYPE_CHECKING:
-        from typing import (
-            Callable,  # noqa: F401
-        )
-        Kernel = Callable[[np.ndarray, float], np.ndarray]
+import typing  # noqa: F401
+if typing.TYPE_CHECKING:
+    from typing import (
+        Callable,  # noqa: F401
+    )
+    Kernel = Callable[[np.ndarray, float], np.ndarray]
 
 
 ##############################################################################

@@ -4,19 +4,35 @@ Raycast utilities for mesh registration.
 
 This module provides functions for raycasting operations using Embree or fallback methods.
 """
-
+import typing
 import numpy as np
 from maya import cmds, mel
-from . import geometry
-
 try:
-    import embreex
-    from embreex import rtcore_scene as rtcs
-    from embreex.mesh_construction import TriangleMesh
+    from embreex import rtcore_scene as rtcs  # type: ignore
+    from embreex.mesh_construction import TriangleMesh  # type: ignore
     EMBREE_AVAILABLE = True
 except ImportError:
     EMBREE_AVAILABLE = False
     cmds.warning("embreex library not found. Using standard raycasting instead.")
+
+
+from . import geometry
+from .core import (
+    RaycastResult,
+)
+from .mapping import (
+    get_matched_info
+)
+
+if typing.TYPE_CHECKING:
+    from ..objects import (
+        MeshObject
+    )
+    from .core import (
+        MappingResult,
+        JointNode,
+        BoneNode,
+    )
 
 
 def build_embree_scene_from_source(src_triangles):
@@ -40,21 +56,20 @@ def build_embree_scene_from_source(src_triangles):
 
 
 def perform_raycast(
-        src_mesh,
-        tar_mesh,
-        tar_mapping_points,
-        src_triangles,
-        src_triangle_indices,
-        sample_number,
-        sample_degree,
-        src_joint_group,
-        tar_joint_group,
-        src_bone_group,
-        tar_bone_group,
-        batch_size=1024,
-        max_triangles=0,
-        match_joint_trees_func=None
-):
+        src_mesh: "MeshObject",
+        tar_mesh: "MeshObject",
+        tar_mapping_points: list["MappingResult"],
+        src_triangles: np.ndarray,  # (num_verts, 3)
+        src_triangle_indices: np.ndarray,  # (num_tri * 3)
+        sample_number: int,
+        sample_degree: float,
+        src_joint_group: list["JointNode"],
+        tar_joint_group: list["JointNode"],
+        src_bone_group: list["BoneNode"],
+        tar_bone_group: list["BoneNode"],
+        batch_size: int = 1024,
+        max_triangles: int = -1,
+) -> list[list[RaycastResult]]:
     """
     Perform raycasting to find correspondence points between meshes.
     
@@ -62,18 +77,6 @@ def perform_raycast(
     or standard raycasting based on availability.
     
     Args:
-        tar_mapping_points (list): Target mapping points
-        src_triangles (np.ndarray): Source mesh vertices
-        src_triangle_indices (np.ndarray): Source mesh triangle indices
-        sample_number (int): Number of sample rays
-        sample_degree (float): Angle range for sampling (degrees)
-        src_joint_group (list): Source joint group
-        tar_joint_group (list): Target joint group
-        src_bone_group (list): Source bone group
-        tar_bone_group (list): Target bone group
-        batch_size (int, optional): Batch size for ray processing
-        max_triangles (int, optional): Maximum number of triangles to process (0=unlimited)
-        match_joint_trees_func (callable, optional): Function to match joint trees
         
     Returns:
         list: Raycast result array
@@ -82,11 +85,7 @@ def perform_raycast(
         raise ImportError("Embree library is not available. Cannot perform raycasting.")
 
     # Create joint mapping from target to source
-    if match_joint_trees_func is None:
-        from .alignment import match_joint_trees
-        match_joint_trees_func = match_joint_trees
-    
-    src_joint_index = match_joint_trees_func(tar_joint_group, src_joint_group)
+    src_indices, _, _ = get_matched_info(src_joint_group, tar_joint_group)
         
     # 入力データをNumPy配列に変換
     src_triangles_np = np.asarray(src_triangles, dtype=np.float32)
@@ -212,8 +211,8 @@ def perform_raycast(
             tar_distance = np.linalg.norm(current_tar_p - current_tar_bone_start_point) / current_tar_bone_v_norm
             
             # ソース骨情報
-            src_start_joint_index = src_joint_index[tar_start_joint_index]
-            src_end_joint_index = src_joint_index[tar_end_joint_index]
+            src_start_joint_index = src_indices[tar_start_joint_index]
+            src_end_joint_index = src_indices[tar_end_joint_index]
             
             if src_start_joint_index == -1 or src_end_joint_index == -1:
                 continue
@@ -287,13 +286,13 @@ def perform_raycast(
                         target_distance = ray_data["target_distance"][idx]
                         
                         # 結果ノードの作成
-                        result_node = {
-                            "from_point": from_point,
-                            "point": intersection_point,
-                            "triangle_index": int(primID),
-                            "weight": float(node_weight),
-                            "relate_distance": float(target_distance / t)
-                        }
+                        result_node = RaycastResult(
+                            from_point=from_point,
+                            point=intersection_point,
+                            triangle_index=int(primID),
+                            weight=float(node_weight),
+                            relate_distance=float(target_distance / t)
+                        )
                         
                         raycast_result_array[vertex_idx].append(result_node)
     

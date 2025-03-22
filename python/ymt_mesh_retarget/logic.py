@@ -167,11 +167,13 @@ def __select_rbf_kernel(kernel_name):
     return kernels[kernel_name]
 
 
-def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius):
-    # type: (np.ndarray, np.ndarray, Kernel, float) -> np.ndarray
+def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius, epsilon=1e-8):
+    # type: (np.ndarray, np.ndarray, Kernel, float, float) -> np.ndarray
     """Calculate the weight matrix for the RBF interpolation."""
     identity = np.ones((source_points.shape[0], 1))
     dist = get_distance_matrix(source_points, source_points, kernel, radius)
+    dist += np.eye(dist.shape[0]) * epsilon  
+
     dim = 3
     a = np.bmat([
         [dist, identity, source_points],
@@ -179,7 +181,15 @@ def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius):
         [source_points.T, np.zeros((dim, 1)), np.zeros((dim, dim))]
     ])
     b = np.bmat([[target_points], [np.zeros((1, dim))], [np.zeros((dim, dim))]])
-    return np.linalg.solve(a, b)
+
+    try:
+        return np.linalg.solve(a, b)
+    except np.linalg.LinAlgError:
+        rank_a = np.linalg.matrix_rank(a)
+        rank_b = np.linalg.matrix_rank(b)
+        mes = "Singular matrix - check the source points for duplicates" \
+                ", the rank of A is {} and the rank of B is {}".format(rank_a, rank_b)
+        raise ValueError(mes)
 
 
 def get_distance_matrix(v1, v2, kernel, radius):

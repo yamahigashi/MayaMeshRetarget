@@ -13,7 +13,7 @@ from maya import cmds
 from maya.api import OpenMaya as om
 from maya.api import OpenMayaAnim as oma
 
-from ..util import timeit, get_skin_cluster
+from ..util import timeit, get_skin_cluster, viewport_off, autokey_off
 from ..objects import MeshObject, create_retargetable_object
 
 # Import from submodules
@@ -99,6 +99,7 @@ class MeshRegistration:
         # For space alignment between source and target
         transform_matrix = None
         original_joint_positions = None
+        original_joint_matrices = None
         
         if align_spaces:
             # print(f"Aligning source bones to target space...")
@@ -107,8 +108,10 @@ class MeshRegistration:
             if transform_matrix is not None:
                 # Store original joint positions for later restoration
                 original_joint_positions = []
+                original_joint_matrices = []
                 for joint in src_joint_group:
                     original_joint_positions.append(joint.position.copy())
+                    original_joint_matrices.append(joint.matrix)
                 
                 # Apply the transformation to the source joint positions
                 for i, joint in enumerate(src_joint_group):
@@ -307,51 +310,81 @@ class MeshRegistration:
         # Get mesh function sets
         source_mesh_fn = self.source_mesh.mesh_fn
         target_mesh_fn = self.target_mesh.mesh_fn
-        
-        # Draw line for each correspondence point
-        for i, cp in enumerate(self.correspondence_points):
-            # Skip invalid indices
-            if cp.source_index < 0 or cp.target_index < 0:
-                continue
-                
-            # Set line color based on weight (red-yellow-green)
-            color = [1, min(cp.weight * 2, 1), 0]  # Higher weight is more yellow
-            
-            # Get vertex positions directly from mesh
-            source_point = source_mesh_fn.getPoint(cp.source_index)
-            target_point = target_mesh_fn.getPoint(cp.target_index)
-            
-            src_x = float(source_point.x)
-            src_y = float(source_point.y)
-            src_z = float(source_point.z)
-            
-            tar_x = float(target_point.x)
-            tar_y = float(target_point.y)
-            tar_z = float(target_point.z)
-            
-            # Draw line
-            line_name = f"corr_line_{i}"
-            curve = cmds.curve(
-                degree=1,
-                point=[
-                    (src_x, src_y, src_z),
-                    (tar_x, tar_y, tar_z)
-                ],
-                name=line_name
-            )
-            
-            # Set line color and thickness
-            cmds.setAttr(f"{curve}.overrideEnabled", 1)
-            cmds.setAttr(f"{curve}.overrideRGBColors", 1)
-            cmds.setAttr(f"{curve}.overrideColorRGB", color[0], color[1], color[2])
-            cmds.setAttr(f"{curve}.lineWidth", line_thickness)
-            
-            # Add to group
-            cmds.parent(curve, group_name)
-        
+ 
+        visualize_correspondences(
+                self.correspondence_points,
+                source_mesh_fn,
+                target_mesh_fn,
+                line_thickness
+        )
+
         return group_name
 
 
+def visualize_correspondences(
+        correspondence_points: List[CorrespondencePoint],
+        source_mesh_fn: om.MFnMesh,
+        target_mesh_fn: om.MFnMesh,
+        line_thickness: int = 1
+    ) -> str:
+    """Create correspondence lines between source and target meshes.
+    
+    Args:
+        correspondence_points (List[CorrespondencePoint]): 対応点のリスト
+        source_mesh_fn (om.MFnMesh): ソースメッシュの MFnMesh
+        target_mesh_fn (om.MFnMesh): ターゲットメッシュの MFnMesh
+        line_thickness (int): ラインの太さ
+    
+    Returns:
+        str: Name of the created transform node
+    """
+    
+    # 1. Create empty transform node for correspondence lines
+    transform_name = cmds.createNode("transform", name="correspondenceLines")
+
+    # 2. Create a line for each correspondence point
+    for i, cp in enumerate(correspondence_points):
+        if cp.source_index < 0 or cp.target_index < 0:
+            continue
+
+        # ウェイトから色を設定する例（赤 -> 黄 -> 緑）
+        color = [1, min(cp.weight * 2, 1), 0]
+
+        # 頂点座標を取得
+        s_pt = source_mesh_fn.getPoint(cp.source_index)
+        t_pt = target_mesh_fn.getPoint(cp.target_index)
+        src_pos = (float(s_pt.x), float(s_pt.y), float(s_pt.z))
+        tar_pos = (float(t_pt.x), float(t_pt.y), float(t_pt.z))
+
+        # 3. Create a temporary curve for the line
+        temp_curve = cmds.curve(
+            p=[src_pos, tar_pos],  # 2CV(2点) の直線カーブ
+            d=1,                   # degree=1
+            name=f"tmp_line_{i}"
+        )
+
+        # 4. Rename the curve shape node
+        shape_node = cmds.listRelatives(temp_curve, shapes=True, fullPath=False)[0]
+        shape_node = cmds.rename(shape_node, f"corrLineShape_{i}")
+
+        # 5. Parent the curve shape node to the transform node 
+        cmds.parent(shape_node, transform_name, shape=True, relative=True)
+
+        # 6. Set line properties
+        cmds.setAttr(f"{shape_node}.overrideEnabled", 1)
+        cmds.setAttr(f"{shape_node}.overrideRGBColors", 1)
+        cmds.setAttr(f"{shape_node}.overrideColorRGB", *color)
+        cmds.setAttr(f"{shape_node}.lineWidth", line_thickness)
+
+        # 7. Delete the temporary curve transform
+        cmds.delete(temp_curve)
+
+    return transform_name   
+
+
+@viewport_off
+@autokey_off
+@timeit       
 def find_correspondence_pairs(
         source_mesh: Union[str, MeshObject],
         target_mesh: Union[str, MeshObject],

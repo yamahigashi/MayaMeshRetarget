@@ -55,6 +55,7 @@ class JointNode:
     index: int = 0  # Index in the joint array
     detail_name: str = ""  # Short name of the joint
     position: Optional[np.ndarray] = None  # World position of the joint
+    matrix: om.MMatrix = om.MMatrix.kIdentity  # World matrix of the joint
 
 
 @dataclass

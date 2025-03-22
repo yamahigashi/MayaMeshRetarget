@@ -9,7 +9,7 @@ import numpy as np
 from maya import cmds, mel
 from scipy.spatial import cKDTree
 
-from ..util import timeit
+from ..util import timeit, get_short_name
 from .core import CorrespondencePoint, MappingNode, MappingResult
 
 
@@ -83,7 +83,10 @@ def get_mapping_points(
     
     for i, joint in enumerate(target_joint_group):
         for j, joint_name in enumerate(target_joint_names):
-            if joint_name.split(":")[-1] == joint.detail_name:
+            jname = get_short_name(joint_name)
+            lname = get_short_name(joint.detail_name)
+            print(f"joint_name: {joint_name}, jname: {jname}, detail_name: {joint.detail_name}, lname: {lname}")
+            if jname == lname:
                 bones_weight_index[i] = j
                 break
     

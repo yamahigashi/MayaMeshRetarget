@@ -24,6 +24,7 @@ from Qt.QtWidgets import (  # type: ignore
     QFrame,
     QGridLayout,
     QToolButton,
+    QComboBox,
 )
 
 from Qt.QtCore import (
@@ -39,6 +40,7 @@ from . import (
     logic,
     util,
     inpaint,
+    logger,
 )
 
 WINDOW_NAME = "RetargetingToolWindow"
@@ -408,6 +410,15 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.restructure_button.clicked.connect(self.restructureButtonClicked)
         self.select_inpaint_area_button = QPushButton("Select inpaint area", self)
         self.select_inpaint_area_button.clicked.connect(self.selectInpaintArea)
+        
+        # Logging controls
+        self.log_level_label = QLabel("Log Level:", self)
+        self.log_level_label.setFixedWidth(LABEL_WIDTH)
+        self.log_level_label.setAlignment(Qt.AlignRight)
+        self.log_level_combo = QComboBox(self)
+        self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+        self.log_level_combo.setCurrentText("INFO")
+        self.log_level_combo.currentTextChanged.connect(self.logLevelChanged)
 
         # -----------------------------------------------
         self.execute_button = QPushButton("Execute!", self)
@@ -505,9 +516,21 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         inpaint_settings_group_box_layout.addLayout(angle_layout)
         self.inpaint_settings_group_box.setLayout(inpaint_settings_group_box_layout)
 
-        utility_group_box_layout = QHBoxLayout()
-        utility_group_box_layout.addWidget(self.restructure_button)
-        utility_group_box_layout.addWidget(self.select_inpaint_area_button)
+        # Log level layout
+        log_level_layout = QHBoxLayout()
+        log_level_layout.addWidget(self.log_level_label)
+        log_level_layout.addWidget(self.log_level_combo)
+        
+        # Utility group box layout
+        utility_group_box_layout = QVBoxLayout()
+        
+        # Add buttons in the first row
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addWidget(self.restructure_button)
+        buttons_layout.addWidget(self.select_inpaint_area_button)
+        
+        utility_group_box_layout.addLayout(buttons_layout)
+        utility_group_box_layout.addLayout(log_level_layout)
         self.utility_group_box.setLayout(utility_group_box_layout)
 
         buttons_layout = QHBoxLayout()
@@ -715,6 +738,11 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             return
 
         inpaint.select_inpaint_area(src, dsts, dist, angle)
+        
+    def logLevelChanged(self, level_text):
+        """Change the logging level based on the combo box selection."""
+        logger.set_log_level(level_text)
+        logger.info(f"Logging level changed to {level_text}")
 
     def checkToExecute(self):
         # type: () -> bool

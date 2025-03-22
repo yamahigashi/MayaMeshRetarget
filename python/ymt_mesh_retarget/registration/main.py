@@ -21,6 +21,7 @@ from ..util import (
     autokey_off,
     one_undo,
 )
+from ..logger import logger
 from ..objects import MeshObject, create_retargetable_object
 
 # Import from submodules
@@ -214,7 +215,7 @@ class MeshRegistration:
             The correspondence points are also stored in the `correspondence_points`
             attribute for later access.
         """
-        print("Starting correspondence search with Skeleton-Aware algorithm...")
+        logger.info("Starting correspondence search with Skeleton-Aware algorithm...")
 
         # Update options if parameters provided
         if sample_rate is not None:
@@ -250,7 +251,7 @@ class MeshRegistration:
         original_joint_matrices = None
 
         if self.options.align_spaces:
-            print("Aligning source bones to target space...")
+            logger.info("Aligning source bones to target space...")
             transform_matrix = calculate_alignment_transform(
                 self.source_joint_group, 
                 self.target_joint_group
@@ -277,16 +278,16 @@ class MeshRegistration:
                     self.target_joint_group
                 )
             else:
-                print("Alignment failed. Skipping space alignment.")
+                logger.warning("Alignment failed. Skipping space alignment.")
 
         # Get the Maya mesh triangles
-        print("Getting source mesh triangle information...")
+        logger.info("Getting source mesh triangle information...")
         mesh_fn = self.source_mesh.mesh_fn
         _tri_counts, tri_indices = mesh_fn.getTriangles()
         src_triangle_indices = np.array(tri_indices, dtype=np.int32)
 
         # Calculate mapping points
-        print("Calculating mapping points...")
+        logger.info("Calculating mapping points...")
         tar_mapping_points = get_mapping_points(
             target_points,
             self.target_joint_group,
@@ -294,10 +295,10 @@ class MeshRegistration:
             target_weights,
             target_joints
         )
-        print(f"Mapping points: {len(tar_mapping_points)}")
+        logger.info(f"Mapping points: {len(tar_mapping_points)}")
 
         # Find correspondence points using raycast
-        print(f"Finding correspondences with {self.options.sample_number} rays at {self.options.sample_degree} degrees using {self.options.num_threads} threads...")
+        logger.info(f"Finding correspondences with {self.options.sample_number} rays at {self.options.sample_degree} degrees using {self.options.num_threads} threads...")
         raycast_result_array = perform_raycast_with_options(
             self.source_mesh,
             self.target_mesh,
@@ -311,7 +312,7 @@ class MeshRegistration:
             options=self.options,
             num_threads=self.options.num_threads
         )
-        print(f"Raycast results: {len(raycast_result_array)}")
+        logger.info(f"Raycast results: {len(raycast_result_array)}")
 
         # Create correspondence points
         self.correspondence_points = create_optimized_correspondence_points(
@@ -323,12 +324,12 @@ class MeshRegistration:
             distance_weight=self.options.distance_weight,
             ray_weight=self.options.ray_weight
         )
-        print(f"Optimized correspondence points: {len(self.correspondence_points)}")
+        logger.info(f"Optimized correspondence points: {len(self.correspondence_points)}")
 
         # Convert results to numpy arrays
         if len(self.correspondence_points) == 0:
             # If advanced correspondence search fails, try simple skeleton-based method
-            print("Advanced correspondence search failed. Trying simple skeleton-based method...")
+            logger.warning("Advanced correspondence search failed. Trying simple skeleton-based method...")
             self.correspondence_points = find_correspondence_using_skeleton(
                 source_points,
                 target_points,
@@ -343,7 +344,7 @@ class MeshRegistration:
             if len(self.correspondence_points) == 0:
                 raise ValueError("No correspondence points found. Check mesh connectivity and skeleton binding.")
         else:
-            print(f"Found {len(self.correspondence_points)} correspondence points with advanced method.")
+            logger.info(f"Found {len(self.correspondence_points)} correspondence points with advanced method.")
 
         # Extract point arrays from correspondence points using mesh function sets
         source_indices = [cp.source_index for cp in self.correspondence_points]
@@ -370,7 +371,7 @@ class MeshRegistration:
 
         # Restore original coordinates if alignment was used
         if self.options.align_spaces and transform_matrix is not None and original_joint_positions is not None:
-            print("Restoring source bone positions to original space...")
+            logger.info("Restoring source bone positions to original space...")
 
             # Restore original joint positions
             for i, joint in enumerate(self.source_joint_group):
@@ -382,15 +383,15 @@ class MeshRegistration:
             # we don't need to manually transform the correspondence points
             # They will be automatically updated when we query the mesh
 
-            print("Source bones restored to original space.")
+            logger.info("Source bones restored to original space.")
 
         if self.options.align_spaces and original_joint_matrices is not None:
             for i, joint in enumerate(self.source_joint_group):
                 joint.matrix = original_joint_matrices[i]
                 cmds.xform(joint.path.fullPathName(), ws=True, m=joint.matrix)
 
-        print("Correspondence search completed.")
-        print(f"Source points: {source_points.shape}, Target points: {target_points.shape}")
+        logger.info("Correspondence search completed.")
+        logger.info(f"Source points: {source_points.shape}, Target points: {target_points.shape}")
 
         return source_points, target_points
 
@@ -459,7 +460,7 @@ class MeshRegistration:
         try:
             return get_skin_cluster(mesh_path)
         except ValueError as e:
-            print(f"Warning: {e}")
+            logger.warning(f"{e}")
             return None
 
     def visualize_correspondences(self, line_thickness: int = 1) -> str:

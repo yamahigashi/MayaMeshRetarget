@@ -1,5 +1,6 @@
 from .ui import show_ui
 from .logic import retarget
+from .logger import logger, set_log_level
 
 
 def reload():
@@ -20,10 +21,10 @@ def reload():
         except KeyError:
             pass
 
-    for file in "ui", "util", "inpaint", "cluster", "logic", "objects", "registration":
+    for file in "ui", "util", "inpaint", "cluster", "logic", "objects", "registration", "logger":
         try:
             importlib.reload(sys.modules[f"{__name__}.{file}"])
         except KeyError:
             pass
 
-__all__ = ["show_ui", "reload", "retarget"]
+__all__ = ["show_ui", "reload", "retarget", "logger", "set_log_level"]

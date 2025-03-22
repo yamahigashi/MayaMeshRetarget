@@ -7,7 +7,6 @@ This module provides functions for raycasting operations using Embree or fallbac
 import typing
 from typing import List, Tuple, Dict, Any, Optional, Union, Callable
 import math
-import logging
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,7 +20,7 @@ try:
     EMBREE_AVAILABLE = True
 except ImportError:
     EMBREE_AVAILABLE = False
-    cmds.warning("embreex library not found. Using standard raycasting instead.")
+    logger.warning("embreex library not found. Using standard raycasting instead.")
 
 from . import geometry
 from .core import (
@@ -44,9 +43,8 @@ if typing.TYPE_CHECKING:
         BoneNode,
     )
 
-# Set up logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+# Use centralized logger
+from ..logger import logger
 
 
 class RaycastEngine:

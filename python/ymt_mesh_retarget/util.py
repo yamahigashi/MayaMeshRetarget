@@ -36,15 +36,7 @@ if TYPE_CHECKING:
     RT = TypeVar("RT")
 
 
-from logging import (
-    getLogger,
-    WARN,  # noqa: F401
-    DEBUG,  # noqa: F401
-    INFO,  # noqa: F401
-)
-logger = getLogger(__name__)
-logger.setLevel(INFO)
-logger.setLevel(DEBUG)
+from .logger import logger
 
 
 

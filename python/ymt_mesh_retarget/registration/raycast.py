@@ -163,9 +163,9 @@ class EmbreeRaycastEngine(RaycastEngine):
         hit = self.scene.run(origin_np, direction_np, output=1)
 
         # Check if hit
-        if hit["geom_id"][0] >= 0:
+        if hit["geomID"][0] >= 0:
             result = {
-                "prim_id": hit["prim_id"][0],
+                "primID": hit["primID"][0],
                 "tfar": hit["tfar"][0],
                 "u": hit["u"][0],
                 "v": hit["v"][0],
@@ -276,7 +276,7 @@ class StandardRaycastEngine(RaycastEngine):
 
         if closest_hit is not None:
             return {
-                "prim_id": closest_prim_id,
+                "primID": closest_prim_id,
                 "tfar": closest_t,
                 "u": closest_u,
                 "v": closest_v,
@@ -345,8 +345,8 @@ class StandardRaycastEngine(RaycastEngine):
                 v[ray_idx] = closest_v
 
         return {
-            "prim_id": prim_id,
-            "geom_id": geom_id,
+            "primID": prim_id,
+            "geomID": geom_id,
             "tfar": tfar,
             "u": u,
             "v": v,
@@ -594,11 +594,11 @@ def perform_raycast(
                 res = engine.cast_rays(ray_origins[:current_batch_size], ray_directions[:current_batch_size])
 
                 # Process hits
-                hit_mask = res["geom_id"] >= 0
+                hit_mask = res["geomID"] >= 0
                 if np.any(hit_mask):
                     # Get hit data
                     hit_indices = np.where(hit_mask)[0]
-                    prim_ids = res["prim_id"][hit_mask]
+                    prim_ids = res["primID"][hit_mask]
                     ts = res["tfar"][hit_mask]
                     us = res["u"][hit_mask]
                     vs = res["v"][hit_mask]

@@ -299,13 +299,13 @@ class ClickableLineEdit(QLineEdit):
         """Initialize the custom line edit widget."""
         super().__init__(parent)
 
-    def mouseDoubleClickEvent(self, event: Qt.QMouseEvent) -> None:
+    def mouseDoubleClickEvent(self, event: "Qt.QMouseEvent") -> None:
         """Handle mouse double-click event and emit the double_clicked signal."""
 
         self.double_clicked.emit()
         super().mouseDoubleClickEvent(event)
 
-    def mousePressEvent(self, event: Qt.QMouseEvent) -> None:
+    def mousePressEvent(self, event: "Qt.QMouseEvent") -> None:
         """Handle mouse press event and emit the clicked signal."""
 
         self.clicked.emit()

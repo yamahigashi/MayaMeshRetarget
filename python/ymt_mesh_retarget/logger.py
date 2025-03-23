@@ -3,9 +3,9 @@
 This module provides a unified logging framework for the entire package,
 ensuring consistent log formatting and control across all components.
 """
-
 import logging
 import os
+from typing import Union
 
 from maya.api import OpenMaya as om
 
@@ -66,7 +66,7 @@ formatter = logging.Formatter("[%(levelname)s | %(name)s | %(asctime)s] %(messag
 # logger.addHandler(maya_handler)
 
 
-def set_log_level(level: str|int) -> int:
+def set_log_level(level: Union[str, int]) -> int:
     """Dynamically change the logging level.
 
     Args:

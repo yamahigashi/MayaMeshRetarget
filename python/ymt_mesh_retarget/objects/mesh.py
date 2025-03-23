@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from maya import cmds
@@ -13,7 +13,7 @@ from .base import RetargetableObject
 class MeshObject(RetargetableObject):
     """Implementation of RetargetableObject for mesh objects."""
 
-    def __init__(self, mesh_path: str | om.MDagPath) -> None:
+    def __init__(self, mesh_path: Union[str, om.MDagPath]) -> None:
         """Initialize."""
         if isinstance(mesh_path, str):
             self.dag_path = get_mesh_dag(mesh_path)  # type: ignore

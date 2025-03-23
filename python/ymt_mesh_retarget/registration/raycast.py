@@ -4,6 +4,7 @@ This module provides functions for raycasting operations using Embree or fallbac
 """
 
 import logging
+import random
 import typing
 from typing import Any, Optional
 
@@ -264,7 +265,7 @@ class StandardRaycastEngine(RaycastEngine):
             v1 = self.triangle_vertices[i, 1]
             v2 = self.triangle_vertices[i, 2]
 
-            # Ray-triangle intersection using Möller–Trumbore algorithm
+            # Ray-triangle intersection using Mテカller窶典rumbore algorithm
             hit, intersection, t, u, v = geometry.ray_triangle_intersection_with_uv(origin, direction, v0, v1, v2)
 
             if hit and t < closest_t:
@@ -403,10 +404,11 @@ def perform_raycast(
     sample_degree: float,
     src_joint_group: list["JointNode"],
     tar_joint_group: list["JointNode"],
-    src_bone_group: list["BoneNode"],
+    src_bone_group: list["BoneNode"],  # noqa: ARG001
     tar_bone_group: list["BoneNode"],
     batch_size: int = 1024,
     max_triangles: int = -1,
+    sample_vertex_count: int = 1500,
     force_standard_raycast: bool = False,
 ) -> list[list[RaycastResult]]:
     """Perform raycasting to find correspondence points between meshes.
@@ -428,6 +430,7 @@ def perform_raycast(
         tar_bone_group: Target bone group
         batch_size: Batch size for processing rays
         max_triangles: Maximum number of triangles to process (-1 for all)
+        sample_vertex_count: Number of vertices to sample per target vertex
         force_standard_raycast: Force using standard raycasting instead of Embree
 
     Returns:
@@ -505,11 +508,17 @@ def perform_raycast(
         )
 
     seed = hash(src_mesh.name + tar_mesh.name)
+    random.seed(seed)
+    sample_vertex_count = min(sample_vertex_count, len(tar_mapping_points))
+    target_vertex_indices = random.sample(range(len(tar_mapping_points)), sample_vertex_count)
 
     # Process each target vertex
     for current_vert, mapping_result in enumerate(tar_mapping_points):
         if not cmds.about(batch=True):
             cmds.progressBar(bar, edit=True, step=1)
+
+        if current_vert not in target_vertex_indices:
+            continue
 
         # Skip if no mapping points
         if not mapping_result.node_array:
@@ -697,4 +706,5 @@ def perform_raycast_with_options(
         tar_bone_group=tar_bone_group,
         batch_size=options.batch_size,
         max_triangles=options.max_triangles,
+        sample_vertex_count=options.sample_count,
     )

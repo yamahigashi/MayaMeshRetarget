@@ -77,7 +77,7 @@ class MeshRegistration:
 
         # Create and customize options
         options = get_default_registration_options()
-        options.sample_rate = 0.3  # Process 30% of vertices
+        options.sample_count = 3000 # Use 3000 sample vertices
         options.num_threads = 8    # Use 8 threads
 
         # Create registration object
@@ -151,7 +151,7 @@ class MeshRegistration:
 
     def find_correspondence_pairs(
         self,
-        sample_rate: Optional[float] = None,
+        sample_count: Optional[int] = None,
         sample_number: Optional[int] = None,
         sample_degree: Optional[float] = None,
         weight_decay: Optional[float] = None,
@@ -177,8 +177,8 @@ class MeshRegistration:
         7. Store the results internally and return point coordinates
 
         Args:
-            sample_rate: Sampling rate for vertices (0.0-1.0).
-                Determines what percentage of vertices to process.
+            sample_count: Number of vertices to sample for correspondence search.
+                Higher values improve accuracy but increase processing time.
                 Default: Uses the value from options
 
             sample_number: Number of sampling rays per point.
@@ -216,8 +216,8 @@ class MeshRegistration:
         logger.info("Starting correspondence search with Skeleton-Aware algorithm...")
 
         # Update options if parameters provided
-        if sample_rate is not None:
-            self.options.sample_rate = sample_rate
+        if sample_count is not None:
+            self.options.sample_count = sample_count
         if sample_number is not None:
             self.options.sample_number = sample_number
         if sample_degree is not None:
@@ -337,7 +337,7 @@ class MeshRegistration:
                 target_weights,
                 source_joints,
                 target_joints,
-                self.options.sample_rate,
+                self.options.sample_count,
                 self.options.weight_decay,
             )
 
@@ -626,9 +626,9 @@ def visualize_correspondences(
 def find_correspondence_pairs(
     source_mesh: Union[str, MeshObject],
     target_mesh: Union[str, MeshObject],
-    sample_rate: float = 0.5,
-    sample_number: int = 16,
-    sample_degree: float = 45.0,
+    sample_count: int = 3000,
+    sample_number: int = 8,
+    sample_degree: float = 25.0,
     weight_decay: float = 2.0,
     align_spaces: bool = True,
     visualize: bool = False,
@@ -656,10 +656,9 @@ def find_correspondence_pairs(
         target_mesh: Target mesh name or MeshObject instance.
             This is the mesh that the source will be mapped to.
 
-        sample_rate: Vertex sampling rate (0.0-1.0).
-            Determines what percentage of vertices to process. Lower values process
-            fewer vertices for faster performance, while higher values improve accuracy.
-            Default: 0.5 (50% of vertices)
+        sample_count: Number of vertices to sample for correspondence search.
+            Higher values improve accuracy but increase processing time.
+            Default: 3000 vertices
 
         sample_number: Number of sample rays per point.
             Higher values improve accuracy but increase processing time.
@@ -726,7 +725,7 @@ def find_correspondence_pairs(
 
         # Customize options
         options = get_default_registration_options()
-        options.sample_rate = 0.3  # Process 30% of vertices
+        options.sample_count = 1500 # Use 1500 sample vertices
         options.num_threads = 8    # Use 8 threads
         options.use_bvh = True     # Use BVH acceleration
 
@@ -753,7 +752,7 @@ def find_correspondence_pairs(
     # If options provided, use them; otherwise create from individual parameters
     if options is None:
         opts = RegistrationOptions(
-            sample_rate=sample_rate,
+            sample_count=sample_count,
             sample_number=sample_number,
             sample_degree=sample_degree,
             weight_decay=weight_decay,

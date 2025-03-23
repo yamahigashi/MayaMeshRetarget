@@ -184,7 +184,7 @@ def get_default_registration_options() -> RegistrationOptions:
     default_threads = max(2, min(cpu_count - 1, 8))
 
     return RegistrationOptions(
-        sample_rate=0.5,  # 50% of vertices
+        sample_count=3000,  # Sample 3000 vertieces
         sample_number=32,  # 32 rays per point
         sample_degree=45.0,  # 45-degree sampling angle
         weight_decay=2.0,  # Standard weight decay
@@ -213,7 +213,7 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
     """
     import multiprocessing
 
-    options.sample_rate = max(0.01, min(1.0, options.sample_rate))
+    options.sample_count = max(100, min(10000, options.sample_count))
     options.sample_number = max(4, min(128, options.sample_number))
     options.sample_degree = max(1.0, min(180.0, options.sample_degree))
     options.weight_decay = max(0.1, options.weight_decay)

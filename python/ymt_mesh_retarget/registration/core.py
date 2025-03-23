@@ -267,19 +267,15 @@ class RegistrationOptions:
     these parameters to optimize for your particular needs.
 
     Attributes:
-        sample_rate: Percentage of vertices to sample (0.0-1.0).
-            Controls how many vertices are processed during correspondence search.
-            Lower values improve performance but may reduce accuracy.
-            - For quick tests: 0.1-0.3
-            - For production: 0.5-1.0
-            - Default: 1.0 (process all vertices)
+        sample_count: Number of vertices to process during correspondence search.
+            Controls how many vertices are sampled for correspondence search.
 
         sample_number: Number of sample rays per point.
             Controls how many rays are cast for each point when searching for correspondences.
             Higher values improve accuracy but increase processing time significantly.
-            - For quick tests: 8-16
+            - For quick tests: 2-16
             - For production: 32-64
-            - Default: 32
+            - Default: 16
 
         sample_degree: Angular range for sampling in degrees.
             Controls the spread of rays around each point.
@@ -361,11 +357,11 @@ class RegistrationOptions:
         options = get_default_registration_options()
 
         # Optimize for performance
-        options.sample_rate = 0.3
-        options.sample_number = 16
+        options.sample_count = 1500
+        options.sample_number = 8
 
         # Or optimize for accuracy
-        options.sample_rate = 0.8
+        options.sample_count = 5000
         options.sample_number = 64
         options.sample_degree = 60.0
 
@@ -374,8 +370,8 @@ class RegistrationOptions:
         ```
     """
 
-    sample_rate: float = 1.0
-    sample_number: int = 32
+    sample_count: int = 3000
+    sample_number: int = 16
     sample_degree: float = 45.0
     weight_decay: float = 2.0
     align_spaces: bool = True

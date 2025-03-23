@@ -1,5 +1,6 @@
-"""Module for inpainting unconvinced distances between two meshes calculated by
-RBF kernel using Laplacian matrix.
+"""Module for inpainting unconvinced distances between two meshes
+
+calculated by RBF kernel using Laplacian matrix.
 """
 
 from typing import TYPE_CHECKING, Any, Union, cast

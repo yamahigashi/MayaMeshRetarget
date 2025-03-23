@@ -1,6 +1,8 @@
 # pyright: reportCallIssue=false,reportArgumentType=false,reportAttributeAccessIssue=false,reportMissingImports=false
 """This module contains the UI for the application."""
 
+from typing import Optional
+
 from Qt.QtCore import (
     QAbstractAnimation,
     QParallelAnimationGroup,
@@ -51,8 +53,17 @@ LABEL_WIDTH = 90
 
 ########################################################################################################################
 class IntSlider(QWidget):
-    def __init__(self, label, minimum=0, maximum=100, interval=5, initial_value=5) -> None:
-        # type: (str, int, int, int, int) -> None
+    """A custom slider widget for integer values with a label and value display."""
+
+    def __init__(
+            self,
+            label: str,
+            minimum: int = 0,
+            maximum: int = 100,
+            interval: int = 5,
+            initial_value: int = 5,
+    ) -> None:
+        """Initialize the integer slider widget."""
 
         super().__init__()
 
@@ -66,7 +77,9 @@ class IntSlider(QWidget):
 
         self.initUI(label, initial_value)
 
-    def initUI(self, label, initial_value) -> None:
+    def initUI(self, label: str, initial_value: int) -> None:
+        """Initialize the UI components of the slider widget."""
+
         # Create the slider and the label
         self.label = QLabel(label, self)
         self.label.setFixedWidth(LABEL_WIDTH - 7)
@@ -93,24 +106,38 @@ class IntSlider(QWidget):
 
         self.setLayout(layout)
 
-    def sizeHint(self):
+    def sizeHint(self) -> QSize:
         # type: () -> QSize
         """Return the size hint of the widget."""
         return QSize(300, 30)
 
-    def updateValueDisplay(self, value) -> None:
+    def updateValueDisplay(self, value: int) -> None:
+        """Update the displayed value when slider changes."""
         self.value_display.setText(str(value))
 
-    def value(self):
+    def value(self) -> int:
+        """Get the current value of the slider."""
         return self.slider.value()
 
-    def setValue(self, value) -> None:
+    def setValue(self, value: int) -> None:
+        """Set the value of the slider."""
+
         self.slider.setValue(value)
 
 
 class FloatSlider(QWidget):
-    def __init__(self, label, minimum=0.0, maximum=1.0, interval=0.05, step=0.001, initial_value=0.05) -> None:
-        # type: (str, float, float, float, float, float) -> None
+    """A custom slider widget for float values with a label and value display."""
+
+    def __init__(
+            self,
+            label: str,
+            minimum: float = 0.0,
+            maximum: float = 1.0,
+            interval: float = 0.05,
+            step: float = 0.001,
+            initial_value: float = 0.05,
+    ) -> None:
+        """Initialize the float slider widget."""
 
         super().__init__()
 
@@ -126,7 +153,9 @@ class FloatSlider(QWidget):
 
         self.initUI(label, initial_value)
 
-    def initUI(self, label, initial_value) -> None:
+    def initUI(self, label: str, initial_value: float) -> None:
+        """Initialize the UI components of the float slider widget."""
+
         # Create the slider and the label
         self.label = QLabel(label, self)
         self.label.setFixedWidth(LABEL_WIDTH - 7)
@@ -153,30 +182,41 @@ class FloatSlider(QWidget):
         layout.addWidget(self.value_display)
         self.setLayout(layout)
 
-    def sizeHint(self):
+    def sizeHint(self) -> QSize:
         # type: () -> QSize
         """Return the size hint of the widget."""
         return QSize(300, 30)
 
-    def updateValueDisplay(self, value) -> None:
+    def updateValueDisplay(self, value: int) -> None:
+        """Update the displayed value when slider changes, converting integer to float."""
         # Calculate the float value based on the slider's integer value
         float_value = value / self.value_multiplier
         self.value_display.setText(f"{float_value:.3f}")
 
-    def value(self):
+    def value(self) -> float:
+        """Get the current float value of the slider."""
         # Get the current float value of the slider
         return self.slider.value() / self.value_multiplier
 
-    def setValue(self, float_value) -> None:
+    def setValue(self, float_value: float) -> None:
+        """Set the value of the slider using a float value."""
         # Set the value of the slider using a float
         self.slider.setValue(int(float_value * self.value_multiplier))
 
 
 class ToggleGroupBox(QWidget):
-    def __init__(self, parent=None, title="", animationDuration=300) -> None:
-        """References:
-        # Adapted from c++ version
-        http://stackoverflow.com/questions/32476006/how-to-make-an-expandable-collapsable-section-widget-in-qt.
+    """A collapsible section widget that can be expanded or collapsed."""
+
+    def __init__(
+            self,
+            _parent: QWidget = None,
+            title: str = "",
+            animationDuration: int = 300,
+    ) -> None:
+        """Initialize the collapsible section widget.
+
+        References: Adapted from c++ version
+            http://stackoverflow.com/questions/32476006/how-to-make-an-expandable-collapsable-section-widget-in-qt.
         """
         super().__init__()
 
@@ -221,7 +261,7 @@ class ToggleGroupBox(QWidget):
         mainLayout.addWidget(self.contentArea, row, 0, 1, 3)
         self.setLayout(self.mainLayout)
 
-        def start_animation(checked) -> None:
+        def start_animation(checked: bool) -> None:
             arrow_type = Qt.DownArrow if checked else Qt.RightArrow
             direction = QAbstractAnimation.Forward if checked else QAbstractAnimation.Backward
             toggleButton.setArrowType(arrow_type)
@@ -230,7 +270,9 @@ class ToggleGroupBox(QWidget):
 
         self.toggleButton.clicked.connect(start_animation)
 
-    def setContentLayout(self, contentLayout) -> None:
+    def setContentLayout(self, contentLayout: QVBoxLayout) -> None:
+        """Set the layout of the content area."""
+
         # Not sure if this is equivalent to self.contentArea.destroy()
         self.contentArea.destroy()
         self.contentArea.setLayout(contentLayout)
@@ -248,36 +290,45 @@ class ToggleGroupBox(QWidget):
 
 
 class ClickableLineEdit(QLineEdit):
+    """A custom QLineEdit that emits additional signals for click and double-click events."""
+
     double_clicked = Signal()
     clicked = Signal()
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget = None) -> None:
+        """Initialize the custom line edit widget."""
         super().__init__(parent)
 
-    def mouseDoubleClickEvent(self, event) -> None:
+    def mouseDoubleClickEvent(self, event: Qt.QMouseEvent) -> None:
+        """Handle mouse double-click event and emit the double_clicked signal."""
+
         self.double_clicked.emit()
         super().mouseDoubleClickEvent(event)
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, event: Qt.QMouseEvent) -> None:
+        """Handle mouse press event and emit the clicked signal."""
+
         self.clicked.emit()
         super().mousePressEvent(event)
 
 
 class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
+    """Main UI window for the mesh retargeting tool."""
     def __init__(
         self,
-        parent=None,
-        src=None,
-        dst=None,
-        objects=None,
-        inpaint=False,
-        inpaint_mode="distance",
-        distance=0.1,
-        angle=180.0,
-        sampling_stride=1,
-        apply_rigid_transform=True,
+        parent: QWidget = None,
+        src: Optional[str] = None,
+        dst: Optional[str] = None,
+        objects: Optional[list[str]] = None,
+        inpaint: bool = False,
+        inpaint_mode: str = "distance",
+        distance: float = 0.1,
+        angle: float = 180.0,
+        sampling_stride: int = 1,
+        apply_rigid_transform: bool = True,
     ) -> None:
-        # type: (QWidget|None, str|None, str|None, list[str]|None, bool, str, float, float, int, bool) -> None
+        """Initialize the main UI window for the mesh retargeting tool."""
+
         super().__init__(parent)
 
         self.initUI()
@@ -302,13 +353,14 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         if apply_rigid_transform:
             self.rigid_on.setChecked(True)
         else:
-            self.rigid_off.setChecked
+            self.rigid_off.setChecked(True)
 
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
     def initUI(self) -> None:
         # type: () -> None
+        """Initialize the user interface components."""
 
         # -----------------------------------------------
         # source and destination object
@@ -595,13 +647,13 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         """Select the target mesh."""
         self.selectObject(self.dst_line_edit.text())
 
-    def selectRetargetObject(self, item) -> None:
+    def selectRetargetObject(self, item: QListWidgetItem) -> None:
         # type: (QListWidgetItem) -> None
         """Select the target mesh."""
         name = item.text() if isinstance(item, QListWidgetItem) else item
         self.selectObject(name)
 
-    def selectObject(self, mesh) -> None:
+    def selectObject(self, mesh: str) -> None:
         # type: (str) -> None
         """Select the mesh from the line edit."""
         if not mesh:
@@ -643,6 +695,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.execute_button.setEnabled(isReady)
 
     def removeSelectedObjects(self) -> None:
+        """Remove the selected objects from the retarget list."""
         # リスト内で選択されているメッシュを削除
         selected_items = self.ret_list_widget.selectedItems()
         if not selected_items:
@@ -656,6 +709,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.execute_button.setEnabled(isReady)
 
     def clearSelectedObjects(self) -> None:
+        """Clear all objects from the retarget list."""
         # リスト内の全てのメッシュを削除
         self.ret_list_widget.clear()
         isReady = self.checkToExecute()
@@ -663,13 +717,14 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
     def clear(self) -> None:
         # type: () -> None
+        """Clear internal data. Empty implementation for now."""
         pass
 
-    def hasMesh(self, mesh) -> bool:
+    def hasMesh(self, mesh: str) -> bool:
         # type: (str) -> bool
         """Check if the mesh exists in the scene."""
         m = cmds.listRelatives(mesh, children=True, shapes=True)
-        return m
+        return bool(m)
 
     def updateValueDisplay(self) -> None:
         # type: () -> None
@@ -682,10 +737,12 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             self.angle_value_display.setText(str(self.angle_slider.value()))
 
     def rigidModeToggled(self) -> None:
+        """Handle toggling of the rigid transformation mode."""
         if self.rigid_on.isChecked() or self.rigid_off.isChecked():
             pass
 
     def inpaintModeToggled(self) -> None:
+        """Handle toggling of the inpaint mode between distance/angle and selection."""
         if self.inpaint_mode_dist.isChecked():
             self.dist_slider.setEnabled(True)
             self.angle_slider.setEnabled(True)
@@ -695,6 +752,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             self.angle_slider.setEnabled(False)
 
     def inpaintOnOffToggled(self) -> None:
+        """Handle toggling of the inpaint feature on/off."""
         if self.inpaint_on.isChecked():
             self.inpaint_settings_group_box.setEnabled(True)
         elif self.inpaint_off.isChecked():
@@ -728,7 +786,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         inpaint.select_inpaint_area(src, dsts, dist, angle)
 
-    def logLevelChanged(self, level_text) -> None:
+    def logLevelChanged(self, level_text: str) -> None:
         """Change the logging level based on the combo box selection."""
         logger.set_log_level(level_text)
         logger.info(f"Logging level changed to {level_text}")

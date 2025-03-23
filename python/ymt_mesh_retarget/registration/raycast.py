@@ -160,9 +160,9 @@ class EmbreeRaycastEngine(RaycastEngine):
         hit = self.scene.run(origin_np, direction_np, output=1)
 
         # Check if hit
-        if hit["geomID"][0] >= 0:
+        if hit["geom_id"][0] >= 0:
             result = {
-                "primID": hit["primID"][0],
+                "prim_id": hit["prim_id"][0],
                 "tfar": hit["tfar"][0],
                 "u": hit["u"][0],
                 "v": hit["v"][0],
@@ -270,7 +270,7 @@ class StandardRaycastEngine(RaycastEngine):
 
         if closest_hit is not None:
             return {
-                "primID": closest_prim_id,
+                "prim_id": closest_prim_id,
                 "tfar": closest_t,
                 "u": closest_u,
                 "v": closest_v,
@@ -294,8 +294,8 @@ class StandardRaycastEngine(RaycastEngine):
         """
         # Initialize result arrays
         num_rays = origins.shape[0]
-        primID = np.full(num_rays, -1, dtype=np.int32)
-        geomID = np.full(num_rays, -1, dtype=np.int32)
+        prim_id = np.full(num_rays, -1, dtype=np.int32)
+        geom_id = np.full(num_rays, -1, dtype=np.int32)
         tfar = np.full(num_rays, np.inf, dtype=np.float32)
         u = np.zeros(num_rays, dtype=np.float32)
         v = np.zeros(num_rays, dtype=np.float32)
@@ -332,15 +332,15 @@ class StandardRaycastEngine(RaycastEngine):
                     closest_v = v_val
 
             if closest_prim_id >= 0:
-                primID[ray_idx] = closest_prim_id
-                geomID[ray_idx] = 0  # We only have one geometry
+                prim_id[ray_idx] = closest_prim_id
+                geom_id[ray_idx] = 0  # We only have one geometry
                 tfar[ray_idx] = closest_t
                 u[ray_idx] = closest_u
                 v[ray_idx] = closest_v
 
         return {
-            "primID": primID,
-            "geomID": geomID,
+            "prim_id": prim_id,
+            "geom_id": geom_id,
             "tfar": tfar,
             "u": u,
             "v": v,
@@ -397,7 +397,7 @@ def perform_raycast(
     sample_degree: float,
     src_joint_group: list["JointNode"],
     tar_joint_group: list["JointNode"],
-    src_bone_group: list["BoneNode"],
+    _src_bone_group: list["BoneNode"],
     tar_bone_group: list["BoneNode"],
     batch_size: int = 1024,
     max_triangles: int = -1,
@@ -588,25 +588,25 @@ def perform_raycast(
                 res = engine.cast_rays(ray_origins[:current_batch_size], ray_directions[:current_batch_size])
 
                 # Process hits
-                hit_mask = res["geomID"] >= 0
+                hit_mask = res["geom_id"] >= 0
                 if np.any(hit_mask):
                     # Get hit data
                     hit_indices = np.where(hit_mask)[0]
-                    primIDs = res["primID"][hit_mask]
+                    prim_ids = res["prim_id"][hit_mask]
                     ts = res["tfar"][hit_mask]
                     us = res["u"][hit_mask]
                     vs = res["v"][hit_mask]
 
                     # Process each hit
                     for i, hit_idx in enumerate(hit_indices):
-                        primID = primIDs[i]
+                        prim_id = prim_ids[i]
                         t = ts[i]
                         u = us[i]
                         v = vs[i]
                         w = 1.0 - u - v
 
                         # Get triangle vertices
-                        triangle_idx = primID
+                        triangle_idx = prim_id
                         v0_idx = src_triangle_indices_np[triangle_idx * 3 + 0]
                         v1_idx = src_triangle_indices_np[triangle_idx * 3 + 1]
                         v2_idx = src_triangle_indices_np[triangle_idx * 3 + 2]
@@ -629,7 +629,7 @@ def perform_raycast(
                         result_node = RaycastResult(
                             from_point=from_point,
                             point=intersection_point,
-                            triangle_index=int(primID),
+                            triangle_index=int(prim_id),
                             weight=float(node_weight),
                             relate_distance=float(target_distance / t),
                         )

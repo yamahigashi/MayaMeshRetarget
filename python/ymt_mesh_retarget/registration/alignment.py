@@ -62,7 +62,7 @@ def calculate_alignment_transform_rbf(
         dist_mat = get_distance_matrix(query_points, tar_points, kernel, radius)
 
         # Build matrix according to RBF formula: [dist_mat, 1, query_points]
-        K = query_points.shape[0]
+        K = query_points.shape[0]  # noqa: N806
         ones = np.ones((K, 1), dtype=np.float64)
         # dist_mat: (K,M), ones: (K,1), query_points: (K,3) => (K, M+1+3)
         h_combined = np.hstack([dist_mat, ones, query_points])

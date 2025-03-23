@@ -1,3 +1,5 @@
+from typing import Optional
+
 from scipy.spatial.transform import Rotation
 
 import numpy as np
@@ -8,9 +10,10 @@ from .base import RetargetableObject
 
 
 class TransformObject(RetargetableObject):
-    """トランスフォームオブジェクト用の実装."""
+    """Implement RetargetableObject for transform nodes."""
 
     def __init__(self, transform_path: str) -> None:
+        """Initialize TransformObject."""
         if isinstance(transform_path, str):
             self.dag_path = get_dag_path(transform_path)
             if not self.dag_path:
@@ -20,7 +23,7 @@ class TransformObject(RetargetableObject):
 
         self.name = self.dag_path.fullPathName()
 
-    def get_points(self, sampling_stride: int = 1) -> np.ndarray:
+    def get_points(self, sampling_stride: int = 1) -> np.ndarray:  # noqa: ARG002
         """トランスフォームの位置を点として取得."""
         pos = cmds.xform(self.name, query=True, worldSpace=True, translation=True)
         return np.array([pos])
@@ -77,7 +80,7 @@ class TransformObject(RetargetableObject):
         diag = np.sqrt(sum((np.array(bbox[3:6]) - np.array(bbox[0:3])) ** 2))
         return diag * coefficient
 
-    def get_children(self, type_filter: str = None) -> list["TransformObject"]:
+    def get_children(self, type_filter: Optional[str] = None) -> list["TransformObject"]:
         """子オブジェクトを取得."""
         if type_filter:
             children = cmds.listRelatives(self.name, children=True, type=type_filter, fullPath=True) or []

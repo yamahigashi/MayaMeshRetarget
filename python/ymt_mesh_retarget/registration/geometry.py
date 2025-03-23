@@ -15,7 +15,10 @@ from .core import Vector3
 
 
 def rand_cone_vector(
-    direction: Vector3, angle_degree: float, num_samples: int, seed: Optional[int] = None,
+    direction: Vector3,
+    angle_degree: float,
+    num_samples: int,
+    seed: Optional[int] = None,
 ) -> NDArray[np.float32]:
     """Generate random vectors within a cone around a direction vector.
 
@@ -25,6 +28,7 @@ def rand_cone_vector(
         direction: Center direction vector of the cone (doesn't need to be normalized)
         angle_degree: Angle of the cone in degrees
         num_samples: Number of samples to generate
+        seed: Random seed for reproducibility
 
     Returns:
         Array of random direction vectors (num_samples, 3) as float32

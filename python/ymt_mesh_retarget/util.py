@@ -66,7 +66,7 @@ def viewport_off(func: Callable[..., RT]) -> Callable[..., RT]:
         from maya import cmds, mel
 
         # paneLayout -manage
-        gMainPane = mel.eval("global string $gMainPane; $temp = $gMainPane;")
+        gMainPane = mel.eval("global string $gMainPane; $temp = $gMainPane;")  # noqa: N806
         cmds.paneLayout(gMainPane, edit=True, manage=False)
 
         # ogs
@@ -355,7 +355,7 @@ def select_vertices(mesh_paths: Union[list[MeshPath], MeshPath], vertices: IntAr
         mesh_paths: Maya mesh path(s) or name(s)
         vertices: Array of vertex indices to select
     """
-    if isinstance(mesh_paths, om.MDagPath) or isinstance(mesh_paths, str):
+    if isinstance(mesh_paths, (om.MDagPath, str)):
         mesh_paths = [mesh_paths]
 
     vertex_path = []
@@ -397,7 +397,7 @@ def calculate_threshold_distance(mesh_paths: Union[list[MeshPath], MeshPath], th
     Raises:
         ValueError: If invalid mesh name is provided
     """
-    if isinstance(mesh_paths, om.MDagPath) or isinstance(mesh_paths, str):
+    if isinstance(mesh_paths, (om.MDagPath, str)):
         mesh_paths = [mesh_paths]
 
     bbox = None

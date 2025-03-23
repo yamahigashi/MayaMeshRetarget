@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from maya import cmds
 from maya.api import OpenMaya as om
@@ -9,9 +11,10 @@ from .base import RetargetableObject
 
 
 class MeshObject(RetargetableObject):
-    """メッシュオブジェクト用の実装."""
+    """Implementation of RetargetableObject for mesh objects."""
 
     def __init__(self, mesh_path: str | om.MDagPath) -> None:
+        """Initialize."""
         if isinstance(mesh_path, str):
             self.dag_path = get_mesh_dag(mesh_path)  # type: ignore
             if not self.dag_path:
@@ -66,7 +69,7 @@ class MeshObject(RetargetableObject):
 
         return calculate_threshold_distance(self.dag_path, coefficient)
 
-    def get_children(self, type_filter: str = None) -> list["RetargetableObject"]:
+    def get_children(self, type_filter: Optional[str] = None) -> list["RetargetableObject"]:  # noqa: ARG002
         """子オブジェクトを取得（メッシュの場合は空リスト）."""
         return []
 
@@ -80,6 +83,13 @@ class MeshObject(RetargetableObject):
         """頂点クラスタリング."""
         return cluster_vertices([self.dag_path])
 
-    def inpaint_distance_matrix(self, source_path: str, distances: np.ndarray, labels: np.ndarray, threshold_coeff: float, angle: float) -> np.ndarray:
+    def inpaint_distance_matrix(
+        self,
+        source_path: str,
+        distances: np.ndarray,
+        labels: np.ndarray,
+        threshold_coeff: float,
+        angle: float,
+    ) -> np.ndarray:
         """距離行列のインペイント処理."""
         return inpaint_distance(source_path, [self.dag_path], distances, labels, threshold_coeff, angle)

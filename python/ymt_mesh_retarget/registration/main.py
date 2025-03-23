@@ -296,9 +296,10 @@ class MeshRegistration:
         logger.info(f"Mapping points: {len(tar_mapping_points)}")
 
         # Find correspondence points using raycast
-        logger.info(
-            f"Finding correspondences with {self.options.sample_number} rays at {self.options.sample_degree} degrees using {self.options.num_threads} threads...",
-        )
+        message = f"Finding correspondences with {self.options.sample_number} rays at "\
+                "{self.options.sample_degree} degrees..."
+        logger.info(message)
+
         raycast_result_array = perform_raycast_with_options(
             self.source_mesh,
             self.target_mesh,

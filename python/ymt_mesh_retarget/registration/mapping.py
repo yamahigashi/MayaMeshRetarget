@@ -17,7 +17,7 @@ if typing.TYPE_CHECKING:
     from .core import BoneNode, JointNode, RaycastResult
 
 
-def find_nearest_vertex_index(position: Vector3, triangle_idx: int, raycast_data: Any) -> int:
+def find_nearest_vertex_index(position: Vector3, triangle_idx: int, raycast_data: Any) -> int:  # noqa: ARG001
     """Find the nearest vertex index to the given position.
 
     This function determines the closest vertex to a point (e.g., ray intersection point)
@@ -253,7 +253,7 @@ def create_optimized_correspondence_points(
     # Create final correspondence points list
     optimized_correspondence_points = []
 
-    for target_idx, candidates in correspondence_dict.items():
+    for _target_idx, candidates in correspondence_dict.items():
         # Create correspondence point object for each candidate
         for candidate in candidates:
             source_idx = candidate["source_index"]
@@ -279,7 +279,7 @@ def find_correspondence_using_skeleton(
     source_joints: list[str],
     target_joints: list[str],
     sample_rate: float = 1.0,
-    weight_decay: float = 2.0,
+    _weight_decay: float = 2.0,
 ) -> list[CorrespondencePoint]:
     """Find correspondence points using skeleton information.
 

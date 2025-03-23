@@ -38,7 +38,8 @@ for handler in logger.handlers[:]:
 class MayaScriptEditorHandler(logging.Handler):
     """Maya Script Editor handler to display messages in Maya"s script editor."""
 
-    def emit(self, record) -> None:
+    def emit(self, record: logging.LogRecord) -> None:
+        """Emit a log record."""
         msg = self.format(record)
 
         if record.levelno >= logging.ERROR:
@@ -65,7 +66,7 @@ formatter = logging.Formatter("[%(levelname)s | %(name)s | %(asctime)s] %(messag
 # logger.addHandler(maya_handler)
 
 
-def set_log_level(level):
+def set_log_level(level: str|int) -> int:
     """Dynamically change the logging level.
 
     Args:

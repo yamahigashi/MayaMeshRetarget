@@ -12,19 +12,13 @@ dependencies = [
 
 [tool.ruff]
 target-version = "py39"
+line-length = 120
+indent-width = 4
 src = [
   "python",
   "stubs",
 ]
-line-length = 120
-indent-width = 4
-fixable = [
-  "ALL"
-]
-include = [
-  "*.py",
-  "*.pyi",
-]
+
 exclude = [
   ".git",
   ".venv",
@@ -33,9 +27,12 @@ exclude = [
   "dist",
   "migrations",
   "docs",
+  "platforms",
 ]
 
+
 [tool.ruff.lint]
+
 select = [
   "E",   # pycodestyle エラー
   "F",   # pyflakes
@@ -61,38 +58,42 @@ select = [
 ignore = [
   "D100",  # 公開モジュールのdocstringが必要
   "D104",  # パッケージのdocstringが必要
+  "D202",  # No blank lines allowed after function docstring
   "D203",  # クラスdocstringの前に1行空行が必要
   "D213",  # マルチライン docstring の概要が1行目に必要
-  "ANN101",  # 型ヒントが必要
-  "ANN102",  # 型ヒントが必要
+  "D415",  # First line should end with a period
+  "ANN401",  # Dynamically typed expression in **kwargs
   "N813",  # CamelCase import as lowercase
+  "RUF002",  # Docstring contains ambiguous word
+  "RUF003",
+  "E741",  # ambiguous variable name
 ]
 
 fixable = ["ALL"]
 unfixable = []
 
 # インポート整理（isort）の設定
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["ymt_mesh_retarget"]
 lines-after-imports = 2
 
 # pydocstyle の設定（Googleスタイル推奨）
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
 # mccabe の複雑度閾値
-[tool.ruff.mccabe]
+[tool.ruff.lint.mccabe]
 max-complexity = 10
 
 # pep8-naming の設定 (無視する名前の指定)
-[tool.ruff.pep8-naming]
+[tool.ruff.lint.pep8-naming]
 ignore-names = [
   "setUp",
   "tearDown"
 ]
 
 # per-file-ignores（特定ファイルでのみ一部ルールを無効化）
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
   "S101",
   "D103",
@@ -113,8 +114,13 @@ ignore-names = [
   "N806",  # Variable in function should be lowercase
 ]
 
+"geometry.py" = [
+  "S311",  # standard pseudo-random number generator
+  "N806",  # Variable in function should be lowercase
+]
+
 # pyupgrade の設定（ターゲットPythonバージョン指定）
-[tool.ruff.pyupgrade]
+[tool.ruff.lint.pyupgrade]
 keep-runtime-typing = false
 
 
@@ -148,6 +154,7 @@ exclude = [
   "dist",
   "migrations",
   "docs",
+  "platforms",
 ]
 reportUnusedImport = false
 reportMissingImports = true

@@ -8,15 +8,15 @@ from .base import RetargetableObject
 
 
 class JointObject(RetargetableObject):
-    """ジョイントオブジェクト用の実装."""
+    """Implementation of RetargetableObject for joints."""
 
     def __init__(self, joint_path: str) -> None:
+        """Initialize the JointObject instance."""
         if isinstance(joint_path, str):
             try:
                 self.dag_path = get_dag_path(joint_path)
             except RuntimeError:
                 print(f"Invalid joint path: {joint_path}")
-                raise ValueError(f"Invalid joint path: {joint_path}")
 
             if not self.dag_path:
                 raise ValueError(f"Invalid joint path: {joint_path}")
@@ -25,7 +25,7 @@ class JointObject(RetargetableObject):
 
         self.name = self.dag_path.fullPathName()
 
-    def get_points(self, sampling_stride: int = 1) -> np.ndarray:
+    def get_points(self, sampling_stride: int = 1) -> np.ndarray:  # noqa: ARG002
         """ジョイントの位置を点として取得."""
         pos = cmds.xform(self.name, query=True, worldSpace=True, translation=True)
         # return np.array([[p.x, p.y, p.z] for p in sparse_points])

@@ -5,15 +5,18 @@ before and after optimizations.
 """
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from maya import cmds
 
 from ..objects import create_retargetable_object
-from ..objects.mesh import MeshObject
 from .benchmark import benchmark_raycast_engines_comparison, print_benchmark_results
 from .main import MeshRegistration
 from .utils import get_default_registration_options
+
+
+if TYPE_CHECKING:
+    from ..objects.mesh import MeshObject
 
 
 def run_engine_comparison(source_mesh_name: str, num_rays: int = 5000) -> dict[str, Any]:

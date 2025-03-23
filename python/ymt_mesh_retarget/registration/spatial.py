@@ -258,7 +258,7 @@ class BVH:
 
         if closest_prim_id >= 0:
             return {
-                "primID": closest_prim_id,
+                "prim_id": closest_prim_id,
                 "tfar": closest_t,
                 "u": closest_u,
                 "v": closest_v,
@@ -282,8 +282,8 @@ class BVH:
         """
         # Initialize result arrays
         num_rays = origins.shape[0]
-        primID = np.full(num_rays, -1, dtype=np.int32)
-        geomID = np.full(num_rays, -1, dtype=np.int32)
+        prim_id = np.full(num_rays, -1, dtype=np.int32)
+        geom_id = np.full(num_rays, -1, dtype=np.int32)
         tfar = np.full(num_rays, np.inf, dtype=np.float32)
         u = np.zeros(num_rays, dtype=np.float32)
         v = np.zeros(num_rays, dtype=np.float32)
@@ -293,15 +293,15 @@ class BVH:
             hit = self.ray_intersection(origins[ray_idx], directions[ray_idx])
 
             if hit:
-                primID[ray_idx] = hit["primID"]
-                geomID[ray_idx] = 0  # We only have one geometry
+                prim_id[ray_idx] = hit["prim_id"]
+                geom_id[ray_idx] = 0  # We only have one geometry
                 tfar[ray_idx] = hit["tfar"]
                 u[ray_idx] = hit["u"]
                 v[ray_idx] = hit["v"]
 
         return {
-            "primID": primID,
-            "geomID": geomID,
+            "prim_id": prim_id,
+            "geom_id": geom_id,
             "tfar": tfar,
             "u": u,
             "v": v,

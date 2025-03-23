@@ -152,6 +152,9 @@ class EmbreeRaycastEngine(RaycastEngine):
         Returns:
             Dict containing hit information or None if no hit
         """
+        if self.scene is None:
+            raise ValueError("Embree scene is not initialized")
+
         # Convert to numpy arrays
         origin_np = np.asarray(origin, dtype=np.float32).reshape(1, 3)
         direction_np = np.asarray(direction, dtype=np.float32).reshape(1, 3)
@@ -185,6 +188,9 @@ class EmbreeRaycastEngine(RaycastEngine):
         Returns:
             Dict containing hit information for all rays
         """
+        if self.scene is None:
+            raise ValueError("Embree scene is not initialized")
+
         return self.scene.run(origins, directions, output=1)
 
     def cleanup(self) -> None:
@@ -397,7 +403,7 @@ def perform_raycast(
     sample_degree: float,
     src_joint_group: list["JointNode"],
     tar_joint_group: list["JointNode"],
-    _src_bone_group: list["BoneNode"],
+    src_bone_group: list["BoneNode"],
     tar_bone_group: list["BoneNode"],
     batch_size: int = 1024,
     max_triangles: int = -1,

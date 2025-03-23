@@ -7,6 +7,12 @@ dependencies = [
   "scipy",
   "scikit-learn",
   "embreex",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyright",
+  "refurb",
   "ruff",
 ]
 
@@ -124,6 +130,8 @@ ignore-names = [
 keep-runtime-typing = false
 
 
+[tool.pylint."FORMAT"]
+max-line-length=120
 [tool.pylint."MASTER"]
 init-hook='import sys;import os;from pylint.config import find_default_config_files;[sys.path.append(p) for p in os.getenv("PYTHONPATH").split(";")];[sys.path.append(os.path.join(os.path.dirname(p), "python") for p in find_default_config_files()];sys.path.append(os.path.join(os.path.dirname(p), "stubs") for p in find_default_config_files()'
 
@@ -161,6 +169,6 @@ reportMissingImports = true
 reportMissingTypeStubs = false
 reportMissingModuleSource = false
 reportTypeCommentUsage = false
-pythonVersion = "3.12"
+pythonVersion = "3.9"
 pythonPlatform = "Windows"
 typeCheckingMode = "basic"

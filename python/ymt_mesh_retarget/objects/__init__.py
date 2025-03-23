@@ -12,8 +12,7 @@ if typing.TYPE_CHECKING:
     from .base import RetargetableObject
 
 
-def create_retargetable_object(path):
-    # type: (str) -> RetargetableObject
+def create_retargetable_object(path: str) -> "RetargetableObject":
     """パスから適切なRetargetableObjectインスタンスを作成."""
     if not path or not cmds.objExists(path):
         raise ValueError(f"Invalid object path: {path}")

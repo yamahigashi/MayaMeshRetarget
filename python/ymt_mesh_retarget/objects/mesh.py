@@ -11,8 +11,7 @@ from .base import RetargetableObject
 class MeshObject(RetargetableObject):
     """メッシュオブジェクト用の実装."""
 
-    def __init__(self, mesh_path) -> None:
-        # type: (str|om.MDagPath) -> None
+    def __init__(self, mesh_path: str | om.MDagPath) -> None:
         if isinstance(mesh_path, str):
             self.dag_path = get_mesh_dag(mesh_path)  # type: ignore
             if not self.dag_path:
@@ -25,12 +24,11 @@ class MeshObject(RetargetableObject):
         self.mesh_fn = get_mesh_fn(self.dag_path)
         self.name = self.dag_path.fullPathName()
 
-    def get_points(self, sampling_stride=1):
-        # type: (int) -> np.ndarray
+    def get_points(self, sampling_stride: int = 1) -> np.ndarray:
         """メッシュの頂点をnumpy配列として取得."""
         return convert_points_to_numpy(self.dag_path, sampling_stride)
 
-    def get_transforms(self):
+    def get_transforms(self) -> list[dict]:
         """メッシュの頂点座標をtransforms配列として取得."""
         points = self.get_points()
         transforms = []
@@ -45,14 +43,14 @@ class MeshObject(RetargetableObject):
             )
         return transforms
 
-    def duplicate(self, suffix="_retarget"):
+    def duplicate(self, suffix: str = "_retarget") -> "MeshObject":
         """メッシュを複製."""
         mesh_name = self.dag_path.fullPathName().split("|")[-1]
         new_name = f"{mesh_name}{suffix}"
         duplicate = cmds.duplicate(self.name, name=new_name)[0]
         return self.__class__.create_from_path(duplicate)
 
-    def apply_transforms(self, transform_data) -> None:
+    def apply_transforms(self, transform_data: list[dict]) -> None:
         """変換情報をメッシュの頂点に適用."""
         points = om.MPointArray()
         for p in transform_data:
@@ -62,26 +60,26 @@ class MeshObject(RetargetableObject):
             points.insert(point, index)
         set_points(self.name, points)
 
-    def calculate_threshold_distance(self, coefficient):
+    def calculate_threshold_distance(self, coefficient: float) -> float:
         """しきい値距離の計算."""
         from ..util import calculate_threshold_distance
 
         return calculate_threshold_distance(self.dag_path, coefficient)
 
-    def get_children(self, type_filter=None):
+    def get_children(self, type_filter: str = None) -> list["RetargetableObject"]:
         """子オブジェクトを取得（メッシュの場合は空リスト）."""
         return []
 
     @staticmethod
-    def create_from_path(path):
+    def create_from_path(path: str) -> "MeshObject":
         """パスからインスタンスを作成."""
         return MeshObject(path)
 
     # メッシュ固有のメソッド
-    def cluster_vertices(self):
+    def cluster_vertices(self) -> tuple[np.ndarray, np.ndarray]:
         """頂点クラスタリング."""
         return cluster_vertices([self.dag_path])
 
-    def inpaint_distance_matrix(self, source_path, distances, labels, threshold_coeff, angle):
+    def inpaint_distance_matrix(self, source_path: str, distances: np.ndarray, labels: np.ndarray, threshold_coeff: float, angle: float) -> np.ndarray:
         """距離行列のインペイント処理."""
         return inpaint_distance(source_path, [self.dag_path], distances, labels, threshold_coeff, angle)

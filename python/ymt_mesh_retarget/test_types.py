@@ -8,7 +8,7 @@ import numpy as np
 from .types import ensure_list, to_mpoint, to_mvector, to_ndarray, to_ndarray_from_vector
 
 
-def test_mpoint_conversion():
+def test_mpoint_conversion() -> None:
     """MPoint変換のテスト"""
     # NumPy配列からMPointへの変換
     np_array = np.array([1.0, 2.0, 3.0])
@@ -29,7 +29,7 @@ def test_mpoint_conversion():
     print(f"\n往復変換の正確性: {'成功' if is_equal else '失敗'}")
 
 
-def test_mvector_conversion():
+def test_mvector_conversion() -> None:
     """MVector変換のテスト"""
     # NumPy配列からMVectorへの変換
     np_array = np.array([1.0, 2.0, 3.0])
@@ -50,7 +50,7 @@ def test_mvector_conversion():
     print(f"\n往復変換の正確性: {'成功' if is_equal else '失敗'}")
 
 
-def test_ensure_list():
+def test_ensure_list() -> None:
     """リスト変換のテスト"""
     # NumPy配列からリストへの変換
     np_array = np.array([1, 2, 3, 4, 5])

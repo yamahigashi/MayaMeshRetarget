@@ -9,6 +9,7 @@ import functools
 import io
 import pstats
 import time
+import typing
 from typing import Any, Callable, Optional, TypeVar
 
 import numpy as np
@@ -41,7 +42,7 @@ def timeit_detailed(func: Callable[..., T]) -> Callable[..., tuple[T, float]]:
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, **kwargs) -> tuple[T, float]:
         start_time = time.time()
         result = func(*args, **kwargs)
         elapsed_time = time.time() - start_time
@@ -61,7 +62,7 @@ def profile_function(func: Callable[..., T]) -> Callable[..., tuple[T, str]]:
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, **kwargs) -> tuple[T, str]:
         pr = cProfile.Profile()
         pr.enable()
         result = func(*args, **kwargs)

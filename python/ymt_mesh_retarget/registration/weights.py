@@ -12,13 +12,13 @@ from .core import TriangleWeightIndex
 
 @timeit
 def get_weight_distance(
-    src_triangles,
-    src_num_tri,
-    src_weight,  # shape=(num_vertices, num_inf)
-    tar_weight,  # shape=(tar_num_vertex, num_inf)
-    tar_joints_retarget,
-    top_n=100,
-):
+    src_triangles: np.ndarray,
+    src_num_tri: int,
+    src_weight: list[list[float]],  # shape=(num_vertices, num_inf)
+    tar_weight: list[list[float]],  # shape=(tar_num_vertex, num_inf)
+    tar_joints_retarget: list[int],
+    top_n: int = 100,
+) -> list[list[TriangleWeightIndex]]:
     """Calculate weight-based distance between source triangles and target vertices.
 
     This function:

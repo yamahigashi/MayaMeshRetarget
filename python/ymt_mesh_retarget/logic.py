@@ -21,10 +21,12 @@ Usage:
 
 import time
 import typing
+from typing import Callable, List, Union, Tuple, Dict, Any, Optional, Sequence, cast
 
 from scipy.spatial.distance import cdist
 
 import numpy as np
+import warnings
 from maya import cmds, mel
 from maya.api import (
     OpenMaya as om,
@@ -38,11 +40,15 @@ from . import (
     # cluster,
     util,
 )
+from .logger import (
+    logger,
+)
 from .objects import (
     MeshObject,
     create_retargetable_object,
 )
 from .objects.base import RetargetableObject  # noqa: F401
+from .types import MeshPath, FloatArray, IntArray
 
 
 if typing.TYPE_CHECKING:
@@ -104,9 +110,9 @@ class RBF:
         the deformation. Smaller radii result in sharper curvatures.
         """
         result = (matrix / radius) ** 2
-        np.warnings.filterwarnings("ignore")
-        result = np.where(result > 0, np.log(result), result)
-        np.warnings.filterwarnings("always")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            result = np.where(result > 0, np.log(result), result)
         return result
 
     @classmethod
@@ -188,7 +194,9 @@ def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius, ep
             "Singular matrix - check the source points for duplicates"
             f", the rank of A is {rank_a} and the rank of B is {rank_b}"
         )
-        raise ValueError(mes)
+        logger.error(mes)
+
+    raise ValueError("Failed to solve the linear system")
 
 
 def get_distance_matrix(v1, v2, kernel, radius):
@@ -205,29 +213,33 @@ def get_distance_matrix(v1, v2, kernel, radius):
 ##############################################################################
 @util.timeit
 def retarget(
-    source,
-    target,
-    objects,
-    kernel=RBF.linear,
-    radius_coefficient=0.0005,
-    angle=180.0,
-    sampling_stride=1,
-    apply_rigid_transform=False,
-    inpaint=True,
-    maintain_hierarchy=True,
-):
-    # type: (str, str, list[str]|str, Kernel|str, float, float, int, bool, bool, bool) -> list[str]
+    source: str,
+    target: str,
+    objects: Union[List[str], str],
+    kernel: Union[Callable, str] = RBF.linear,
+    radius_coefficient: float = 0.0005,
+    angle: float = 180.0,
+    sampling_stride: int = 1,
+    apply_rigid_transform: bool = False,
+    inpaint: bool = True,
+    maintain_hierarchy: bool = True,
+) -> Sequence[str]:
     """Run the mesh retarget.
 
-    :param source: Source mesh
-    :param target: Modified source mesh
-    :param objects: List of retargetable objects
-    :param kernel: One of the RBF functions. See class RBF
-    :param radius_coefficient: Smoothing parameter for the RBF
-    :param sampling_stride: Vertex stride to sample on the source mesh. Increase to speed
-                   up the calculation but less accurate.
-    :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
-    :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices
+    Args:
+        source: Source mesh
+        target: Modified source mesh
+        objects: List of retargetable objects
+        kernel: One of the RBF functions (default: RBF.linear)
+        radius_coefficient: Smoothing parameter for the RBF (default: 0.0005)
+        angle: Angle threshold for inpainting (default: 180.0)
+        sampling_stride: Vertex stride to sample on the source mesh (default: 1)
+        apply_rigid_transform: Whether to apply rigid transformation (default: False)
+        inpaint: Whether to inpaint unconvinced vertices (default: True)
+        maintain_hierarchy: Whether to maintain hierarchical structure (default: True)
+        
+    Returns:
+        List of retargeted object names
     """
     source_obj = create_retargetable_object(source)
     target_obj = create_retargetable_object(target)
@@ -236,13 +248,13 @@ def retarget(
     util.get_mesh_dag(target)
 
     retarget_objects = []
+    if isinstance(objects, str):
+        objects = [objects]
+        
     for obj in objects:
         ret = create_retargetable_object(obj)
         if ret is not None:
             retarget_objects.append(ret)
-
-    # if isinstance(meshes, str):
-    #     meshes = [meshes]
 
     if isinstance(kernel, str):
         kernel = __select_rbf_kernel(kernel)
@@ -280,28 +292,33 @@ def retarget(
 
 
 def __retarget(
-    source_obj,
-    target_obj,
-    retarget_objects,
-    kernel,
-    radius_coefficient,
-    angle,
-    sampling_stride,
-    apply_rigid_transform,
-    inpaint,
-    maintain_hierarchy,
-):
-    # type: (RetargetableObject, RetargetableObject, list[RetargetableObject], Kernel, float, float, int, bool, bool, bool) -> list[om.MDagPath]
-    """Run the mesh retarget.
-    :param source: Source mesh
-    :param target: Modified source mesh
-    :param meshes: List of meshes to retarget
-    :param kernel: One of the RBF functions. See class RBF
-    :param radius_coefficient: Smoothing parameter for the RBF
-    :param sampling_stride: Vertex sampling_stride to sample on the source mesh. Increase to speed up
-                   the calculation but less accurate.
-    :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
-    :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices.
+    source_obj: RetargetableObject,
+    target_obj: RetargetableObject,
+    retarget_objects: List[RetargetableObject],
+    kernel: Callable,
+    radius_coefficient: float,
+    angle: float,
+    sampling_stride: int,
+    apply_rigid_transform: bool,
+    inpaint: bool,
+    maintain_hierarchy: bool,
+) -> Sequence[str]:
+    """Run the mesh retarget implementation.
+    
+    Args:
+        source_obj: Source object to retarget from
+        target_obj: Target object with modified form
+        retarget_objects: List of objects to retarget
+        kernel: RBF kernel function to use
+        radius_coefficient: Smoothing parameter for the RBF
+        angle: Angle threshold for inpainting
+        sampling_stride: Vertex sampling stride
+        apply_rigid_transform: Whether to apply rigid transformations
+        inpaint: Whether to inpaint distance matrix
+        maintain_hierarchy: Whether to maintain hierarchical structure
+        
+    Returns:
+        List of retargeted object names
     """
     # Extract points from source and target meshes
     source_points = source_obj.get_points(sampling_stride)

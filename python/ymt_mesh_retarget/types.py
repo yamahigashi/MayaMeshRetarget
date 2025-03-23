@@ -1,7 +1,9 @@
 """Project-wide type definitions."""
 
-from typing import Union, List, Sequence, TypeVar, Any, Optional, Tuple
+from typing import List, Union
+
 import numpy as np
+
 
 try:
     from numpy.typing import NDArray
@@ -10,6 +12,7 @@ except ImportError:
     from typing import Any as NDArray
 
 from maya.api import OpenMaya as om
+
 
 # Common type aliases
 MeshPath = Union[om.MDagPath, str]

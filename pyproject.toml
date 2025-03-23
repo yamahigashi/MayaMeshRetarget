@@ -103,6 +103,10 @@ ignore-names = [
   "F401"
 ]
 
+"inpaint.py" = [
+  "N806",  # Variable in function should be lowercase
+]
+
 # pyupgrade の設定（ターゲットPythonバージョン指定）
 [tool.ruff.pyupgrade]
 keep-runtime-typing = false

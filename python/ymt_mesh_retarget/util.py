@@ -2,7 +2,7 @@
 
 import functools
 import time
-from typing import TypeVar, Callable, List, Dict, Any, Union, Optional, Tuple, cast
+from typing import Any, Callable, List, Optional, TypeVar, Union
 
 from scipy.sparse import (
     lil_matrix,
@@ -18,7 +18,8 @@ from maya.api import (
 )
 
 from .logger import logger
-from .types import MeshPath, VertexArray, FloatArray, IntArray, to_ndarray
+from .types import IntArray, MeshPath, VertexArray
+
 
 RT = TypeVar("RT")
 
@@ -69,7 +70,7 @@ def viewport_off(func: Callable[..., RT]) -> Callable[..., RT]:
         cmds.paneLayout(gMainPane, edit=True, manage=False)
 
         # ogs
-        ogs_paused = cmds.ogs(q=True, pause=True)
+        ogs_paused = cmds.ogs(query=True, pause=True)
         if not ogs_paused:
             cmds.ogs(pause=True)
 
@@ -138,7 +139,7 @@ def autokey_off(func: Callable[..., RT]) -> Callable[..., RT]:
         import maya.mel as mel  # pylint: disable=unused-import  # noqa
         import maya.cmds as cmds
 
-        current = cmds.autoKeyframe(q=True, state=True)
+        current = cmds.autoKeyframe(query=True, state=True)
         if not isinstance(current, bool):
             raise Exception("could not get current frame by cmds.autoKeyframe")
 

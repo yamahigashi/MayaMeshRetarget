@@ -1,11 +1,10 @@
 """Module for clustering vertices based on skin weights and topological adjacency."""
 
 import collections
-from typing import List, Tuple, Dict, Set, DefaultDict
+from typing import DefaultDict, List, Tuple
 
 from scipy.sparse import (
     lil_matrix,
-    csr_matrix,
 )
 from scipy.spatial import cKDTree
 
@@ -19,7 +18,7 @@ from maya.api import (
 )
 
 from . import util
-from .types import MeshPath, VertexArray, IntArray
+from .types import IntArray, MeshPath
 
 
 ##############################################################################
@@ -27,7 +26,7 @@ from .types import MeshPath, VertexArray, IntArray
 ##############################################################################
 @util.timeit
 def cluster_vertices_by_skin_weight(
-    mesh_paths: List[MeshPath], precision: int = 3, min_vertices_per_cluster: int = 6
+    mesh_paths: List[MeshPath], precision: int = 3, min_vertices_per_cluster: int = 6,
 ) -> IntArray:
     """Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
 
@@ -190,7 +189,8 @@ def refine_clusters_by_topology(mesh_paths: List[MeshPath], labels: IntArray, to
     # Function to check if all neighbors of a vertex are within the same cluster
     def is_fully_connected_within_cluster(vertex: int, current_cluster: int) -> bool:
         neighbors = adjacency_matrix[vertex].nonzero()[1]
-        return np.all(labels[neighbors] == current_cluster)
+        # Convert numpy.bool_ to Python bool for type compatibility
+        return bool(np.all(labels[neighbors] == current_cluster))
 
     # Function to perform breadth-first search (BFS) to find connected components
     def bfs(start_vertex: int, current_cluster: int) -> Tuple[List[int], bool]:

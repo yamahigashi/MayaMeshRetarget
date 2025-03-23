@@ -2,14 +2,14 @@
 RBF kernel using Laplacian matrix.
 """
 
-from typing import List, Tuple, Union, Optional
+from typing import Union, List, Tuple, Dict, Any, cast, TypeVar, TYPE_CHECKING
 
 from scipy.sparse import (
     block_diag as spblock_diag,
 )
 from scipy.sparse import (
     csr_matrix,
-    dia_matrix,  # noqa: F401
+    dia_matrix,
     lil_matrix,
 )
 from scipy.sparse import (
@@ -20,13 +20,20 @@ from scipy.sparse import (
 )
 from scipy.spatial import cKDTree
 
+# For compatibility with different SciPy versions
+if TYPE_CHECKING:
+    try:
+        from scipy.sparse import dia_array
+    except ImportError:
+        dia_array = dia_matrix  # type: ignore
+
 import numpy as np
 from maya.api import (
     OpenMaya as om,
 )
 
 from . import util
-from .types import MeshPath, to_mpoint, to_ndarray, VertexArray, FloatArray, IntArray
+from .types import FloatArray, IntArray, MeshPath, to_ndarray
 
 
 ##############################################################################
@@ -34,10 +41,10 @@ from .types import MeshPath, to_mpoint, to_ndarray, VertexArray, FloatArray, Int
 ##############################################################################
 def segregate_vertices_by_confidence(
     src_path: MeshPath,
-    dst_paths: Union[List[MeshPath], MeshPath],
+    dst_paths: Union[list[MeshPath], MeshPath],
     threshold_dist_coefficient: float = 0.1,
     threshold_angle: float = 180.0,
-) -> Tuple[IntArray, IntArray]:
+) -> tuple[IntArray, IntArray]:
     """Segregate vertices by confidence.
 
     Args:
@@ -70,7 +77,7 @@ def segregate_vertices_by_confidence(
 
 @util.timeit
 def __inpaint_distance_matrix(
-    mesh_paths: List[MeshPath], D: FloatArray, known_indices: IntArray, unknown_indices: IntArray
+    mesh_paths: list[MeshPath], D: FloatArray, known_indices: IntArray, unknown_indices: IntArray, # noqa: N803
 ) -> FloatArray:
     """Apply inpainting for indices.
 
@@ -97,12 +104,16 @@ def __inpaint_distance_matrix(
     M_diag = np.clip(M.diagonal(), 1e-8, None)
 
     Q = -L + L @ spdiags(np.reciprocal(M_diag)) @ L
+    
+    # Convert to CSR for indexing compatibility
+    Q_csr = csr_matrix(Q)
 
     S_match = known_indices
     S_nomatch = unknown_indices
 
-    Q_UU = csr_matrix(Q[np.ix_(S_nomatch, S_nomatch)])
-    Q_UI = csr_matrix(Q[np.ix_(S_nomatch, S_match)])
+    # Use CSR matrix for indexing to avoid compatibility issues
+    Q_UU = csr_matrix(Q_csr[np.ix_(S_nomatch, S_nomatch)])
+    Q_UI = csr_matrix(Q_csr[np.ix_(S_nomatch, S_match)])
 
     rank = np.linalg.matrix_rank(Q_UU.toarray())
     if rank < Q_UU.shape[0]:
@@ -123,7 +134,7 @@ def __inpaint_distance_matrix(
     return D
 
 
-def __create_vertex_data_array(mesh_paths: List[MeshPath]) -> np.ndarray:
+def __create_vertex_data_array(mesh_paths: list[MeshPath]) -> np.ndarray:
     """Create a structured numpy array containing vertex index, position, and normal.
 
     Args:
@@ -179,7 +190,7 @@ def __get_closest_points_by_kdtree(source_path: MeshPath, target_vertex_data: np
 
 
 def __filter_high_confidence_matches(
-    target_vertex_data: np.ndarray, closest_points_data: np.ndarray, max_distance: float, max_angle: float
+    target_vertex_data: np.ndarray, closest_points_data: np.ndarray, max_distance: float, max_angle: float,
 ) -> IntArray:
     """Filter high confidence matches using structured arrays.
 
@@ -212,7 +223,7 @@ def __filter_high_confidence_matches(
     return high_confidence_indices
 
 
-def __add_laplacian_entry_in_place(L: lil_matrix, tri_positions: List[om.MPoint], tri_indices: List[int]) -> None:
+def __add_laplacian_entry_in_place(L: lil_matrix, tri_positions: list[om.MPoint], tri_indices: list[int]) -> None:  # noqa: N803
     """Add laplacian entry.
 
     CAUTION: L is modified in-place.
@@ -252,7 +263,7 @@ def __add_laplacian_entry_in_place(L: lil_matrix, tri_positions: List[om.MPoint]
     L[i3, i3] -= cotan3
 
 
-def __add_area_in_place(areas: np.ndarray, tri_positions: List[om.MPoint], tri_indices: List[int]) -> None:
+def __add_area_in_place(areas: np.ndarray, tri_positions: list[om.MPoint], tri_indices: list[int]) -> None:
     """Add area.
 
     CAUTION: areas is modified in-place.
@@ -271,7 +282,7 @@ def __add_area_in_place(areas: np.ndarray, tri_positions: List[om.MPoint], tri_i
         areas[idx] += area
 
 
-def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> Tuple[csr_matrix, dia_matrix]:
+def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> Tuple[csr_matrix, Any]:  # Return Any for compatibility
     """Compute laplacian matrix from mesh.
 
     Treat area as mass matrix.
@@ -302,7 +313,8 @@ def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> Tuple[csr_matrix, d
     L_csr = L.tocsr()
     M_csr = spdiags(areas)
 
-    return L_csr, M_csr
+    # Using Any for compatibility between dia_matrix and dia_array
+    return L_csr, cast(Any, M_csr)
 
 
 def __compute_cotangent(v1: om.MPoint, v2: om.MPoint, v3: om.MPoint) -> float:
@@ -333,7 +345,7 @@ def __compute_cotangent(v1: om.MPoint, v2: om.MPoint, v3: om.MPoint) -> float:
 @util.timeit
 def inpaint_distance(
     source_path: MeshPath,
-    target_paths: List[MeshPath],
+    target_paths: list[MeshPath],
     distances: FloatArray,
     labels: IntArray,
     threshold_dist_coefficient: float = 0.1,
@@ -358,7 +370,7 @@ def inpaint_distance(
     """
     # Segregate vertices based on confidence and inpaint distances
     confident_indices, unconvinced_indices = segregate_vertices_by_confidence(
-        source_path, target_paths, threshold_dist_coefficient, threshold_angle
+        source_path, target_paths, threshold_dist_coefficient, threshold_angle,
     )
 
     # TODO: Rigid transformation for unconvinced vertices
@@ -386,7 +398,7 @@ def inpaint_distance(
 
 def select_inpaint_area(
     src_path: MeshPath,
-    dst_paths: Union[List[MeshPath], MeshPath],
+    dst_paths: Union[list[MeshPath], MeshPath],
     threshold_distance: float = 0.1,
     threshold_angle: float = 180.0,
 ) -> None:

@@ -10,6 +10,7 @@ from maya import cmds
 from maya.api import OpenMaya as om
 from numpy.typing import NDArray
 
+from ..types import ensure_list
 from ..util import get_short_name, timeit
 from .core import JointNode, RegistrationOptions, Vector3
 
@@ -57,7 +58,8 @@ def get_matched_info(
     matched_src_indices = np.where(src_matched_flags)[0]
     matched_tar_indices = np.where(tar_matched_flags)[0]
 
-    return matched_src_indices, matched_tar_indices, matched_joint_names
+    # Convert numpy arrays to Python lists to ensure type compatibility
+    return ensure_list(matched_src_indices), ensure_list(matched_tar_indices), matched_joint_names
 
 
 def find_root_joints(joint_paths: typing.Union[list[om.MDagPath], list[JointNode]]) -> list[om.MDagPath]:

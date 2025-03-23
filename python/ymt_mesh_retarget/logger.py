@@ -56,13 +56,13 @@ formatter = logging.Formatter("[%(levelname)s | %(name)s | %(asctime)s] %(messag
 # console.setFormatter(formatter)
 
 # Create and configure Maya handler
-maya_handler = MayaScriptEditorHandler()
-maya_handler.setLevel(logger.level)
-maya_handler.setFormatter(formatter)
-
-# Add handlers to logger
-# logger.addHandler(console)
-logger.addHandler(maya_handler)
+# maya_handler = MayaScriptEditorHandler()
+# maya_handler.setLevel(logger.level)
+# maya_handler.setFormatter(formatter)
+#
+# # Add handlers to logger
+# # logger.addHandler(console)
+# logger.addHandler(maya_handler)
 
 
 def set_log_level(level):

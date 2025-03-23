@@ -2,7 +2,7 @@
 RBF kernel using Laplacian matrix.
 """
 
-from typing import Union, List, Tuple, Dict, Any, cast, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Union, cast
 
 from scipy.sparse import (
     block_diag as spblock_diag,
@@ -19,6 +19,7 @@ from scipy.sparse import (
     linalg as splinalg,
 )
 from scipy.spatial import cKDTree
+
 
 # For compatibility with different SciPy versions
 if TYPE_CHECKING:
@@ -104,7 +105,7 @@ def __inpaint_distance_matrix(
     M_diag = np.clip(M.diagonal(), 1e-8, None)
 
     Q = -L + L @ spdiags(np.reciprocal(M_diag)) @ L
-    
+
     # Convert to CSR for indexing compatibility
     Q_csr = csr_matrix(Q)
 
@@ -282,7 +283,7 @@ def __add_area_in_place(areas: np.ndarray, tri_positions: list[om.MPoint], tri_i
         areas[idx] += area
 
 
-def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> Tuple[csr_matrix, Any]:  # Return Any for compatibility
+def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[csr_matrix, Any]:  # Return Any for compatibility
     """Compute laplacian matrix from mesh.
 
     Treat area as mass matrix.
@@ -314,7 +315,7 @@ def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> Tuple[csr_matrix, A
     M_csr = spdiags(areas)
 
     # Using Any for compatibility between dia_matrix and dia_array
-    return L_csr, cast(Any, M_csr)
+    return L_csr, cast("Any", M_csr)
 
 
 def __compute_cotangent(v1: om.MPoint, v2: om.MPoint, v3: om.MPoint) -> float:

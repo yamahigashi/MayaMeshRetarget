@@ -2,7 +2,7 @@
 
 import functools
 import time
-from typing import Any, Callable, List, Optional, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar, Union
 
 from scipy.sparse import (
     lil_matrix,
@@ -336,7 +336,7 @@ def get_skin_weight_as_sparse_matrix(mesh_path: MeshPath) -> lil_matrix:
     return sparse_weights
 
 
-def set_points(mesh: MeshPath, points: Union[List[om.MPoint], om.MPointArray]) -> None:
+def set_points(mesh: MeshPath, points: Union[list[om.MPoint], om.MPointArray]) -> None:
     """Set the deformed points to the mesh.
 
     Args:
@@ -348,7 +348,7 @@ def set_points(mesh: MeshPath, points: Union[List[om.MPoint], om.MPointArray]) -
 
 
 ##############################################################################
-def select_vertices(mesh_paths: Union[List[MeshPath], MeshPath], vertices: IntArray) -> None:
+def select_vertices(mesh_paths: Union[list[MeshPath], MeshPath], vertices: IntArray) -> None:
     """Select the given vertices on the given meshes.
 
     Args:
@@ -382,7 +382,7 @@ def select_vertices(mesh_paths: Union[List[MeshPath], MeshPath], vertices: IntAr
 
 
 ##############################################################################
-def calculate_threshold_distance(mesh_paths: Union[List[MeshPath], MeshPath], threshold_ratio: float) -> float:
+def calculate_threshold_distance(mesh_paths: Union[list[MeshPath], MeshPath], threshold_ratio: float) -> float:
     """Returns dbox * threshold_ratio.
 
     dbox is the target mesh bounding box diagonal length.
@@ -421,7 +421,7 @@ def calculate_threshold_distance(mesh_paths: Union[List[MeshPath], MeshPath], th
 
 
 ##############################################################################
-def restructure_meshes_hierarchy(suffix: str = "retarget", targets: Optional[List[str]] = None) -> None:
+def restructure_meshes_hierarchy(suffix: str = "retarget", targets: Optional[list[str]] = None) -> None:
     """Restructure meshes hierarchy by adding suffix to parent node names.
 
     Args:

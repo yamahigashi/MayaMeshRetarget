@@ -604,7 +604,7 @@ def visualize_correspondences(
         shape_node = cmds.rename(shape_node, f"corrLineShape_{i}")
 
         # Parent the curve shape node to the transform node
-        cmds.parent(shape_node, transform_name, shape=True, relative=True)
+        shape_node = cmds.parent(shape_node, transform_name, shape=True, relative=True)[0]
 
         # Set line properties
         cmds.setAttr(f"{shape_node}.overrideEnabled", 1)

@@ -1,7 +1,6 @@
 """Module for clustering vertices based on skin weights and topological adjacency."""
 
 import collections
-from typing import DefaultDict, List, Tuple
 
 from scipy.sparse import (
     lil_matrix,
@@ -26,7 +25,7 @@ from .types import IntArray, MeshPath
 ##############################################################################
 @util.timeit
 def cluster_vertices_by_skin_weight(
-    mesh_paths: List[MeshPath], precision: int = 3, min_vertices_per_cluster: int = 6,
+    mesh_paths: list[MeshPath], precision: int = 3, min_vertices_per_cluster: int = 6,
 ) -> IntArray:
     """Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
 
@@ -109,7 +108,7 @@ def cluster_vertices_by_skin_weight(
         vertex_keys.append(key)
 
     # Map keys to vertex indices
-    key_to_vertices: DefaultDict[tuple, List[int]] = collections.defaultdict(list)
+    key_to_vertices: collections.defaultdict[tuple, list[int]] = collections.defaultdict(list)
     for vertex_index, key in zip(vertex_indices, vertex_keys):
         key_to_vertices[key].append(vertex_index)
 
@@ -125,7 +124,7 @@ def cluster_vertices_by_skin_weight(
 
 
 @util.timeit
-def refine_clusters_by_topology(mesh_paths: List[MeshPath], labels: IntArray, tolerance: float = 1e-6) -> IntArray:
+def refine_clusters_by_topology(mesh_paths: list[MeshPath], labels: IntArray, tolerance: float = 1e-6) -> IntArray:
     """Refine clusters by checking topological adjacency across multiple meshes.
 
     Args:
@@ -193,7 +192,7 @@ def refine_clusters_by_topology(mesh_paths: List[MeshPath], labels: IntArray, to
         return bool(np.all(labels[neighbors] == current_cluster))
 
     # Function to perform breadth-first search (BFS) to find connected components
-    def bfs(start_vertex: int, current_cluster: int) -> Tuple[List[int], bool]:
+    def bfs(start_vertex: int, current_cluster: int) -> tuple[list[int], bool]:
         queue = [start_vertex]
         cluster_vertices = []
         dissolve = False  # Flag to determine if the cluster should be dissolved
@@ -244,7 +243,7 @@ def refine_clusters_by_topology(mesh_paths: List[MeshPath], labels: IntArray, to
 
 
 @util.timeit
-def cluster_vertices(mesh_paths: List[MeshPath]) -> IntArray:
+def cluster_vertices(mesh_paths: list[MeshPath]) -> IntArray:
     """Cluster vertices across multiple meshes.
 
     Args:

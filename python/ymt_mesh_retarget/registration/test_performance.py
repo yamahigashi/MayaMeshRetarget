@@ -5,19 +5,18 @@ before and after optimizations.
 """
 
 import time
-from typing import Any, Dict, List, Union, cast
+from typing import Any, cast
 
 from maya import cmds
 
 from ..objects import create_retargetable_object
-from ..objects.base import RetargetableObject
 from ..objects.mesh import MeshObject
 from .benchmark import benchmark_raycast_engines_comparison, print_benchmark_results
 from .main import MeshRegistration
 from .utils import get_default_registration_options
 
 
-def run_engine_comparison(source_mesh_name: str, num_rays: int = 5000) -> Dict[str, Any]:
+def run_engine_comparison(source_mesh_name: str, num_rays: int = 5000) -> dict[str, Any]:
     """Run a comparison between raycast engines.
 
     Args:
@@ -28,7 +27,7 @@ def run_engine_comparison(source_mesh_name: str, num_rays: int = 5000) -> Dict[s
         Benchmark results
     """
     source_obj = create_retargetable_object(source_mesh_name)
-    source_mesh_obj = cast(MeshObject, source_obj)  # Cast to expected type for benchmark function
+    source_mesh_obj = cast("MeshObject", source_obj)  # Cast to expected type for benchmark function
 
     print("Comparing raycast engines...")
     results = benchmark_raycast_engines_comparison(source_mesh_obj, num_rays)
@@ -41,7 +40,7 @@ def run_registration_comparison(
     source_mesh_name: str,
     target_mesh_name: str,
     num_tests: int = 3,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Run a comparison of registration performance with different options.
 
     Args:
@@ -54,13 +53,13 @@ def run_registration_comparison(
     """
     source_obj = create_retargetable_object(source_mesh_name)
     target_obj = create_retargetable_object(target_mesh_name)
-    
+
     # Cast to MeshObject for type compatibility
-    source_mesh_obj = cast(MeshObject, source_obj)
-    target_mesh_obj = cast(MeshObject, target_obj)
+    source_mesh_obj = cast("MeshObject", source_obj)
+    target_mesh_obj = cast("MeshObject", target_obj)
 
     # Test results
-    results: Dict[str, Dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     # Default options with standard raycast
     options_standard = get_default_registration_options()
@@ -81,7 +80,7 @@ def run_registration_comparison(
 
     # Run tests
     print("Testing standard raycast without BVH...")
-    standard_times: List[float] = []
+    standard_times: list[float] = []
     for i in range(num_tests):
         registration = MeshRegistration(source_mesh_obj, target_mesh_obj, options=options_standard)
         start_time = time.time()
@@ -98,7 +97,7 @@ def run_registration_comparison(
     }
 
     print("Testing with BVH acceleration...")
-    bvh_times: List[float] = []
+    bvh_times: list[float] = []
     for i in range(num_tests):
         registration = MeshRegistration(source_mesh_obj, target_mesh_obj, options=options_bvh)
         start_time = time.time()
@@ -115,7 +114,7 @@ def run_registration_comparison(
     }
 
     print("Testing with BVH acceleration and multithreading...")
-    optimal_times: List[float] = []
+    optimal_times: list[float] = []
     for i in range(num_tests):
         registration = MeshRegistration(source_mesh_obj, target_mesh_obj, options=options_optimal)
         start_time = time.time()

@@ -22,6 +22,7 @@ except ImportError:
     EMBREE_AVAILABLE = False
     cmds.warning("embreex library not found. Using standard raycasting instead.")
 
+from ..util import timeit
 from . import geometry
 from .core import RaycastResult, RegistrationOptions, Vector3
 from .utils import get_matched_info
@@ -644,6 +645,7 @@ def perform_raycast(
     return raycast_result_array
 
 
+@timeit
 def perform_raycast_with_options(
     src_mesh: "MeshObject",
     tar_mesh: "MeshObject",

@@ -1,6 +1,6 @@
 """Project-wide type definitions."""
 
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 
@@ -18,7 +18,7 @@ from maya.api import OpenMaya as om
 MeshPath = Union[om.MDagPath, str]
 VertexArray = NDArray[np.float64]  # type: ignore
 JointWeights = NDArray[np.float64]  # type: ignore
-PointList = Union[List[om.MPoint], List[List[float]], NDArray[np.float64]]  # type: ignore
+PointList = Union[list[om.MPoint], list[list[float]], NDArray[np.float64]]  # type: ignore
 IndexArray = NDArray[np.int_]  # type: ignore
 FloatArray = NDArray[np.float64]  # type: ignore
 IntArray = NDArray[np.int_]  # type: ignore
@@ -77,7 +77,7 @@ def to_ndarray_from_vector(vector: om.MVector) -> np.ndarray:
     return np.array([vector.x, vector.y, vector.z], dtype=np.float64)
 
 
-def ensure_list(array_like: Union[List, np.ndarray]) -> List:
+def ensure_list(array_like: Union[list, np.ndarray]) -> list:
     """Convert NumPy array to list if needed.
 
     Args:

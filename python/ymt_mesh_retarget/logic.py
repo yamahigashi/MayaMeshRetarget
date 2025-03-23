@@ -21,12 +21,13 @@ Usage:
 
 import time
 import typing
-from typing import Callable, List, Union, Tuple, Dict, Any, Optional, Sequence, cast
+import warnings
+from collections.abc import Sequence
+from typing import Callable, Union
 
 from scipy.spatial.distance import cdist
 
 import numpy as np
-import warnings
 from maya import cmds, mel
 from maya.api import (
     OpenMaya as om,
@@ -47,8 +48,7 @@ from .objects import (
     MeshObject,
     create_retargetable_object,
 )
-from .objects.base import RetargetableObject  # noqa: F401
-from .types import MeshPath, FloatArray, IntArray
+from .objects.base import RetargetableObject
 
 
 if typing.TYPE_CHECKING:
@@ -215,7 +215,7 @@ def get_distance_matrix(v1, v2, kernel, radius):
 def retarget(
     source: str,
     target: str,
-    objects: Union[List[str], str],
+    objects: Union[list[str], str],
     kernel: Union[Callable, str] = RBF.linear,
     radius_coefficient: float = 0.0005,
     angle: float = 180.0,
@@ -250,7 +250,7 @@ def retarget(
     retarget_objects = []
     if isinstance(objects, str):
         objects = [objects]
-        
+
     for obj in objects:
         ret = create_retargetable_object(obj)
         if ret is not None:
@@ -294,7 +294,7 @@ def retarget(
 def __retarget(
     source_obj: RetargetableObject,
     target_obj: RetargetableObject,
-    retarget_objects: List[RetargetableObject],
+    retarget_objects: list[RetargetableObject],
     kernel: Callable,
     radius_coefficient: float,
     angle: float,

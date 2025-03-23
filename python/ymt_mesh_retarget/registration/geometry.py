@@ -1,6 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Geometric calculation functions for mesh registration.
+"""Geometric calculation functions for mesh registration.
 
 This module provides functions for geometric operations such as ray-triangle intersection,
 random vector generation within cones, and barycentric coordinates calculation.
@@ -8,7 +6,7 @@ random vector generation within cones, and barycentric coordinates calculation.
 
 import math
 import random
-from typing import Tuple, Optional
+from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,9 +14,11 @@ from numpy.typing import NDArray
 from .core import Vector3
 
 
-def rand_cone_vector(direction: Vector3, angle_degree: float, num_samples: int, seed: Optional[int] = None) -> NDArray[np.float32]:
-    """Generate random vectors within a cone around a direction vector
-    
+def rand_cone_vector(
+    direction: Vector3, angle_degree: float, num_samples: int, seed: Optional[int] = None,
+) -> NDArray[np.float32]:
+    """Generate random vectors within a cone around a direction vector.
+
     Python implementation of the rand_cone_vector function from C++ version
 
     Args:
@@ -32,10 +32,7 @@ def rand_cone_vector(direction: Vector3, angle_degree: float, num_samples: int, 
     # Normalize direction vector
     direction = np.array(direction, dtype=np.float32)
     direction_norm = np.linalg.norm(direction)
-    if direction_norm < 1e-10:
-        direction = np.array([0, 0, 1], dtype=np.float32)
-    else:
-        direction = direction / direction_norm
+    direction = np.array([0, 0, 1], dtype=np.float32) if direction_norm < 1e-10 else direction / direction_norm
 
     # Convert degrees to radians
     cone_angle = angle_degree * math.pi / 180.0
@@ -103,15 +100,15 @@ def rand_cone_vector(direction: Vector3, angle_degree: float, num_samples: int, 
 
 
 def ray_triangle_intersection(
-    orig: Vector3, 
-    dir_vec: Vector3, 
-    v0: Vector3, 
-    v1: Vector3, 
-    v2: Vector3, 
-    scale: float = 1.0
-) -> Tuple[bool, Optional[Vector3], float]:
-    """Ray-triangle intersection test
-    
+    orig: Vector3,
+    dir_vec: Vector3,
+    v0: Vector3,
+    v1: Vector3,
+    v2: Vector3,
+    scale: float = 1.0,
+) -> tuple[bool, Optional[Vector3], float]:
+    """Ray-triangle intersection test.
+
     Python implementation of the ray_triangle_intersection function from C++ version
 
     Args:
@@ -179,18 +176,18 @@ def ray_triangle_intersection(
 
 
 def ray_triangle_intersection_with_uv(
-    orig: Vector3, 
-    dir_vec: Vector3, 
-    v0: Vector3, 
-    v1: Vector3, 
-    v2: Vector3, 
-    scale: float = 1.0
-) -> Tuple[bool, Optional[Vector3], float, float, float]:
-    """Ray-triangle intersection test with barycentric coordinates
-    
+    orig: Vector3,
+    dir_vec: Vector3,
+    v0: Vector3,
+    v1: Vector3,
+    v2: Vector3,
+    scale: float = 1.0,
+) -> tuple[bool, Optional[Vector3], float, float, float]:
+    """Ray-triangle intersection test with barycentric coordinates.
+
     Extends the ray_triangle_intersection function to also return
     the barycentric coordinates (u, v).
-    
+
     Args:
         orig: Ray origin point
         dir_vec: Ray direction vector
@@ -258,13 +255,13 @@ def ray_triangle_intersection_with_uv(
 
 
 def triangle_interpolation(
-    v1: Vector3, 
-    v2: Vector3, 
-    v3: Vector3, 
-    p: Vector3
-) -> Tuple[float, float, float]:
-    """Calculate barycentric coordinates of a point in a triangle
-    
+    v1: Vector3,
+    v2: Vector3,
+    v3: Vector3,
+    p: Vector3,
+) -> tuple[float, float, float]:
+    """Calculate barycentric coordinates of a point in a triangle.
+
     Python implementation of the triangle_interpolation function from C++ version
 
     Args:
@@ -318,36 +315,36 @@ def triangle_interpolation(
 
 
 def calculate_triangle_normal(v0: Vector3, v1: Vector3, v2: Vector3) -> Vector3:
-    """Calculate the normal vector of a triangle
-    
+    """Calculate the normal vector of a triangle.
+
     Args:
         v0: First vertex of the triangle
         v1: Second vertex of the triangle
         v2: Third vertex of the triangle
-        
+
     Returns:
         Normalized normal vector of the triangle
     """
     edge1 = v1 - v0
     edge2 = v2 - v0
     normal = np.cross(edge1, edge2)
-    
+
     # Normalize
     normal_length = np.linalg.norm(normal)
     if normal_length > 1e-10:
         normal = normal / normal_length
-        
+
     return normal
 
 
-def create_plane_from_triangle(v0: Vector3, v1: Vector3, v2: Vector3) -> Tuple[Vector3, float]:
-    """Create a plane equation from a triangle
-    
+def create_plane_from_triangle(v0: Vector3, v1: Vector3, v2: Vector3) -> tuple[Vector3, float]:
+    """Create a plane equation from a triangle.
+
     Args:
         v0: First vertex of the triangle
         v1: Second vertex of the triangle
         v2: Third vertex of the triangle
-        
+
     Returns:
         Tuple containing:
         - Vector3: Normalized plane normal
@@ -355,72 +352,72 @@ def create_plane_from_triangle(v0: Vector3, v1: Vector3, v2: Vector3) -> Tuple[V
     """
     normal = calculate_triangle_normal(v0, v1, v2)
     d = -np.dot(normal, v0)
-    
+
     return normal, d
 
 
 def point_to_triangle_distance(p: Vector3, v0: Vector3, v1: Vector3, v2: Vector3) -> float:
-    """Calculate the minimum distance from a point to a triangle
-    
+    """Calculate the minimum distance from a point to a triangle.
+
     Args:
         p: Point
         v0: First vertex of the triangle
         v1: Second vertex of the triangle
         v2: Third vertex of the triangle
-        
+
     Returns:
         Minimum distance from the point to the triangle
     """
     # Calculate triangle normal and plane
     normal, d = create_plane_from_triangle(v0, v1, v2)
-    
+
     # Calculate distance to the plane
     plane_distance = abs(np.dot(normal, p) + d)
-    
+
     # Project the point onto the plane
     projected_point = p - plane_distance * normal
-    
+
     # Check if the projected point is inside the triangle
     # using barycentric coordinates
     w1, w2, w3 = triangle_interpolation(v0, v1, v2, projected_point)
-    
+
     if 0 <= w1 <= 1 and 0 <= w2 <= 1 and 0 <= w3 <= 1:
         # Point is inside the triangle, return plane distance
         return plane_distance
-    
+
     # Point is outside the triangle, calculate minimum distance to edges
     edge_distances = [
         point_to_line_segment_distance(p, v0, v1),
         point_to_line_segment_distance(p, v1, v2),
-        point_to_line_segment_distance(p, v2, v0)
+        point_to_line_segment_distance(p, v2, v0),
     ]
-    
+
     return min(edge_distances)
 
 
 def point_to_line_segment_distance(p: Vector3, a: Vector3, b: Vector3) -> float:
-    """Calculate the minimum distance from a point to a line segment
-    
+    """Calculate the minimum distance from a point to a line segment.
+
     Args:
         p: Point
         a: Start of line segment
         b: End of line segment
-        
+
     Returns:
         Minimum distance from the point to the line segment
     """
     # Vector from a to b
     ab = b - a
     ab_length_squared = np.dot(ab, ab)
-    
+
     if ab_length_squared < 1e-10:
         # The line segment is degenerate
         return np.linalg.norm(p - a)
-    
+
     # Calculate projection of p onto line segment
     ap = p - a
     t = np.dot(ap, ab) / ab_length_squared
-    
+
     if t < 0:
         # Point is beyond point a
         return np.linalg.norm(p - a)

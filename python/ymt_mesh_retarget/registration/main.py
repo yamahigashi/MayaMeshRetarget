@@ -4,67 +4,64 @@ This module provides the MeshRegistration class that coordinates the process
 of finding correspondence points between meshes.
 """
 
-from typing import List, Tuple, Union, Optional, Dict, Any
-import numpy as np
-from numpy.typing import NDArray
+from typing import Optional, Union
 
+import numpy as np
 from maya import cmds
 from maya.api import OpenMaya as om
 from maya.api import OpenMayaAnim as oma
+from numpy.typing import NDArray
 
-from ..util import (
-    timeit,
-    get_skin_cluster,
-    viewport_off,
-    autokey_off,
-    one_undo,
-)
 from ..logger import logger
 from ..objects import MeshObject, create_retargetable_object
-
-# Import from submodules
-from .core import (
-    CorrespondencePoint,
-    RegistrationOptions
-)
-from .mapping import (
-    get_mapping_points,
-    find_correspondence_using_skeleton,
-    create_optimized_correspondence_points
-)
-from .raycast import (
-    perform_raycast,
-    perform_raycast_with_options
+from ..util import (
+    autokey_off,
+    get_skin_cluster,
+    one_undo,
+    timeit,
+    viewport_off,
 )
 from .alignment import (
     calculate_alignment_transform,
     get_joint_tree,
     match_joint_trees,
 )
+
+# Import from submodules
+from .core import (
+    CorrespondencePoint,
+    RegistrationOptions,
+)
+from .mapping import (
+    create_optimized_correspondence_points,
+    find_correspondence_using_skeleton,
+    get_mapping_points,
+)
+from .raycast import perform_raycast_with_options
 from .utils import (
     get_default_registration_options,
-    validate_registration_options
+    validate_registration_options,
 )
 
 
 class MeshRegistration:
     """Main class for finding correspondences between skinned meshes.
-    
-    The MeshRegistration class provides the primary functionality for establishing 
+
+    The MeshRegistration class provides the primary functionality for establishing
     point correspondences between two skinned meshes with different topologies.
-    It uses skeletal information to guide the mapping process, employing ray-casting 
+    It uses skeletal information to guide the mapping process, employing ray-casting
     techniques to identify corresponding points.
-    
+
     This class maintains state across operations, allowing for advanced usage such as:
     - Incremental processing
     - Result visualization
     - Access to intermediate data
     - Customization of all registration parameters
-    
+
     For simple use cases, consider the standalone `find_correspondence_pairs()` function.
     This class is intended for more complex workflows where you need access to the
     underlying data structures or want to customize the process further.
-    
+
     Attributes:
         source_mesh: The source mesh object
         target_mesh: The target mesh object
@@ -74,47 +71,49 @@ class MeshRegistration:
     Example:
         ```python
         from ymt_mesh_retarget.registration import (
-            MeshRegistration, 
+            MeshRegistration,
             get_default_registration_options
         )
-        
+
         # Create and customize options
         options = get_default_registration_options()
         options.sample_rate = 0.3  # Process 30% of vertices
         options.num_threads = 8    # Use 8 threads
-        
+
         # Create registration object
         registration = MeshRegistration("sourceModel", "targetModel", options)
-        
+
         # Find correspondence pairs
         source_points, target_points = registration.find_correspondence_pairs()
-        
+
         # Visualize the results
         registration.visualize_correspondences()
-        
+
         # Access the correspondence points directly if needed
         for cp in registration.correspondence_points:
             print(f"Source: {cp.source_index}, Target: {cp.target_index}, Weight: {cp.weight}")
         ```
     """
 
-    def __init__(self, 
-                 source_mesh: Union[str, MeshObject], 
-                 target_mesh: Union[str, MeshObject],
-                 options: Optional[RegistrationOptions] = None):
+    def __init__(
+        self,
+        source_mesh: Union[str, MeshObject],
+        target_mesh: Union[str, MeshObject],
+        options: Optional[RegistrationOptions] = None,
+    ) -> None:
         """Initialize a new MeshRegistration instance.
 
         Args:
             source_mesh: Source mesh name or MeshObject instance.
                 This is the mesh that will be mapped to the target.
-            
+
             target_mesh: Target mesh name or MeshObject instance.
                 This is the mesh that the source will be mapped to.
-            
+
             options: Registration options controlling the process.
                 If None, default options will be used. You can get the defaults
                 using get_default_registration_options().
-                
+
         Raises:
             ValueError: If the provided meshes are invalid or don't exist.
         """
@@ -138,10 +137,10 @@ class MeshRegistration:
         # Set options
         self.options = options if options is not None else get_default_registration_options()
         self.options = validate_registration_options(self.options)
-        
+
         # Storage for correspondence point results
-        self.correspondence_points: List[CorrespondencePoint] = []
-        
+        self.correspondence_points: list[CorrespondencePoint] = []
+
         # Storage for joint data
         self.source_joint_paths = None
         self.source_joint_group = None
@@ -151,22 +150,23 @@ class MeshRegistration:
         self.target_bone_group = None
 
     def find_correspondence_pairs(
-            self, 
-            sample_rate: Optional[float] = None,
-            sample_number: Optional[int] = None, 
-            sample_degree: Optional[float] = None,
-            weight_decay: Optional[float] = None,
-            align_spaces: Optional[bool] = None) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
+        self,
+        sample_rate: Optional[float] = None,
+        sample_number: Optional[int] = None,
+        sample_degree: Optional[float] = None,
+        weight_decay: Optional[float] = None,
+        align_spaces: Optional[bool] = None,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Find correspondence point pairs between source and target meshes.
 
-        This method performs the correspondence search process, identifying matching points 
-        between the source and target meshes. It uses ray-casting techniques guided by skeletal 
+        This method performs the correspondence search process, identifying matching points
+        between the source and target meshes. It uses ray-casting techniques guided by skeletal
         information to find the best matches.
-        
+
         You can optionally override specific registration options via the parameters.
         Any parameter passed as None will use the value from the options specified at
         initialization time.
-        
+
         The method performs these key steps:
         1. Extract skin weight information from both meshes
         2. Build joint hierarchies for source and target
@@ -175,24 +175,24 @@ class MeshRegistration:
         5. Perform ray-casting to find potential correspondences
         6. Optimize and filter correspondence points
         7. Store the results internally and return point coordinates
-        
+
         Args:
             sample_rate: Sampling rate for vertices (0.0-1.0).
                 Determines what percentage of vertices to process.
                 Default: Uses the value from options
-                
+
             sample_number: Number of sampling rays per point.
                 Higher values improve accuracy but increase processing time.
                 Default: Uses the value from options
-                
+
             sample_degree: Angle range for ray sampling in degrees.
                 Controls the spread of rays around each point.
                 Default: Uses the value from options
-                
+
             weight_decay: Weight decay coefficient for joint influence.
                 Controls how quickly the influence of a joint decreases with distance.
                 Default: Uses the value from options
-                
+
             align_spaces: Whether to align source and target coordinate spaces.
                 When True, transforms the source to align with the target using joints.
                 Default: Uses the value from options
@@ -201,14 +201,14 @@ class MeshRegistration:
             A tuple containing two numpy arrays:
             - Source correspondence point coordinates (N, 3)
             - Target correspondence point coordinates (N, 3)
-            
+
             These point arrays can be used directly with RBF interpolation to
             transfer attributes between the meshes.
-            
+
         Raises:
             ValueError: If no skin cluster is found on either mesh, or if no
                       correspondence points could be found between the meshes.
-                      
+
         Note:
             The correspondence points are also stored in the `correspondence_points`
             attribute for later access.
@@ -226,7 +226,7 @@ class MeshRegistration:
             self.options.weight_decay = weight_decay
         if align_spaces is not None:
             self.options.align_spaces = align_spaces
-            
+
         # Validate options
         self.options = validate_registration_options(self.options)
 
@@ -251,8 +251,8 @@ class MeshRegistration:
         if self.options.align_spaces:
             logger.info("Aligning source bones to target space...")
             transform_matrix = calculate_alignment_transform(
-                self.source_joint_group, 
-                self.target_joint_group
+                self.source_joint_group,
+                self.target_joint_group,
             )
 
             if transform_matrix is not None:
@@ -273,7 +273,7 @@ class MeshRegistration:
                     self.source_mesh,
                     self.target_mesh,
                     self.source_joint_group,
-                    self.target_joint_group
+                    self.target_joint_group,
                 )
             else:
                 logger.warning("Alignment failed. Skipping space alignment.")
@@ -291,12 +291,14 @@ class MeshRegistration:
             self.target_joint_group,
             self.target_bone_group,
             target_weights,
-            target_joints
+            target_joints,
         )
         logger.info(f"Mapping points: {len(tar_mapping_points)}")
 
         # Find correspondence points using raycast
-        logger.info(f"Finding correspondences with {self.options.sample_number} rays at {self.options.sample_degree} degrees using {self.options.num_threads} threads...")
+        logger.info(
+            f"Finding correspondences with {self.options.sample_number} rays at {self.options.sample_degree} degrees using {self.options.num_threads} threads...",
+        )
         raycast_result_array = perform_raycast_with_options(
             self.source_mesh,
             self.target_mesh,
@@ -319,7 +321,7 @@ class MeshRegistration:
             max_points_per_target=self.options.max_points_per_target,
             min_weight_threshold=self.options.min_weight_threshold,
             distance_weight=self.options.distance_weight,
-            ray_weight=self.options.ray_weight
+            ray_weight=self.options.ray_weight,
         )
         logger.info(f"Optimized correspondence points: {len(self.correspondence_points)}")
 
@@ -335,7 +337,7 @@ class MeshRegistration:
                 source_joints,
                 target_joints,
                 self.options.sample_rate,
-                self.options.weight_decay
+                self.options.weight_decay,
             )
 
             if len(self.correspondence_points) == 0:
@@ -392,8 +394,8 @@ class MeshRegistration:
 
         return source_points, target_points
 
-    def _get_skin_weights(self, mesh_obj: MeshObject) -> Tuple[List[List[float]], List[str]]:
-        """Get skinning weight information from mesh
+    def _get_skin_weights(self, mesh_obj: MeshObject) -> tuple[list[list[float]], list[str]]:
+        """Get skinning weight information from mesh.
 
         Args:
             mesh_obj: Mesh object
@@ -424,12 +426,12 @@ class MeshRegistration:
         num_vertices = mesh_fn.numVertices
 
         # Create vertex component
-        vert_indices = om.MIntArray([i for i in range(num_vertices)])
+        vert_indices = om.MIntArray(list(range(num_vertices)))
         vert_component = om.MFnSingleIndexedComponent().create(om.MFn.kMeshVertComponent)
         om.MFnSingleIndexedComponent(vert_component).addElements(vert_indices)
 
         # Create influence indices
-        influence_indices = om.MIntArray([i for i in range(len(influence_objects))])
+        influence_indices = om.MIntArray(list(range(len(influence_objects))))
 
         # Get skin weights
         weights = fn_skin.getWeights(mesh_obj.dag_path, vert_component, influence_indices)
@@ -446,7 +448,7 @@ class MeshRegistration:
         return weights_list, joint_names
 
     def _find_skin_cluster(self, mesh_path: om.MDagPath) -> Optional[oma.MFnSkinCluster]:
-        """Find skin cluster for mesh
+        """Find skin cluster for mesh.
 
         Args:
             mesh_path: Mesh DAG path
@@ -469,7 +471,7 @@ class MeshRegistration:
         - Red: Low confidence correspondence
         - Yellow: Medium confidence
         - Green: High confidence correspondence
-        
+
         This visualization is valuable for debugging and validating the registration
         results. It allows you to see which points were matched and the quality of
         the matching.
@@ -481,21 +483,21 @@ class MeshRegistration:
 
         Returns:
             Name of the created visualization group node in the Maya scene.
-            This transform node contains all the curve shapes representing the 
+            This transform node contains all the curve shapes representing the
             correspondence lines.
-            
+
         Raises:
             ValueError: If no correspondence points are available. You must call
                       find_correspondence_pairs() before visualizing.
-                      
+
         Example:
             ```python
             registration = MeshRegistration("sourceModel", "targetModel")
             registration.find_correspondence_pairs()
-            
+
             # Create visualization with thicker lines
             group_name = registration.visualize_correspondences(line_thickness=3)
-            
+
             # Select the visualization in Maya
             from maya import cmds
             cmds.select(group_name)
@@ -509,43 +511,43 @@ class MeshRegistration:
         target_mesh_fn = self.target_mesh.mesh_fn
 
         group_name = visualize_correspondences(
-                self.correspondence_points,
-                source_mesh_fn,
-                target_mesh_fn,
-                line_thickness
+            self.correspondence_points,
+            source_mesh_fn,
+            target_mesh_fn,
+            line_thickness,
         )
 
         return group_name
 
 
 def visualize_correspondences(
-        correspondence_points: List[CorrespondencePoint],
-        source_mesh_fn: om.MFnMesh,
-        target_mesh_fn: om.MFnMesh,
-        line_thickness: int = 1
-    ) -> str:
+    correspondence_points: list[CorrespondencePoint],
+    source_mesh_fn: om.MFnMesh,
+    target_mesh_fn: om.MFnMesh,
+    line_thickness: int = 1,
+) -> str:
     """Create visualization of correspondence points between source and target meshes.
 
     Creates a set of line curves in the Maya scene that connect corresponding points
     between the source and target meshes. Each line shows the mapping between a point
     on the source mesh and its corresponding point on the target mesh.
-    
+
     The lines are color-coded based on the correspondence weight:
     - Red: Low confidence correspondence (weight near 0)
     - Yellow: Medium confidence correspondence (weight around 0.5)
     - Green: High confidence correspondence (weight near 1.0)
-    
+
     This helps visualize both the correspondence mapping and the quality/confidence
     of each correspondence point.
 
     Args:
-        correspondence_points: List of correspondence points containing the vertex 
+        correspondence_points: List of correspondence points containing the vertex
             indices and weights for each correspondence pair.
-            
+
         source_mesh_fn: Source mesh MFnMesh object used to access vertex positions.
-        
+
         target_mesh_fn: Target mesh MFnMesh object used to access vertex positions.
-        
+
         line_thickness: Line thickness for visualization (1-10).
             Higher values create thicker, more visible lines.
             Default: 1
@@ -553,17 +555,17 @@ def visualize_correspondences(
     Returns:
         Name of the created transform node that contains all the line curves.
         This node can be selected or manipulated in Maya like any other transform.
-        
+
     Example:
         ```python
         from maya.api import OpenMaya as om
-        
+
         # Get mesh function sets
         src_mesh_dag = om.MGlobal.getSelectionListByName("sourceMesh").getDagPath(0)
         tar_mesh_dag = om.MGlobal.getSelectionListByName("targetMesh").getDagPath(0)
         src_mesh_fn = om.MFnMesh(src_mesh_dag)
         tar_mesh_fn = om.MFnMesh(tar_mesh_dag)
-        
+
         # Create visualization with thicker lines
         group_name = visualize_correspondences(
             correspondence_points,
@@ -593,15 +595,15 @@ def visualize_correspondences(
         # Create a temporary curve for the line
         temp_curve = cmds.curve(
             p=[src_pos, tar_pos],  # 2-point straight line curve
-            d=1,                   # degree=1
-            name=f"tmp_line_{i}"
+            d=1,  # degree=1
+            name=f"tmp_line_{i}",
         )
 
         # Rename the curve shape node
         shape_node = cmds.listRelatives(temp_curve, shapes=True, fullPath=True)[0]
         shape_node = cmds.rename(shape_node, f"corrLineShape_{i}")
 
-        # Parent the curve shape node to the transform node 
+        # Parent the curve shape node to the transform node
         cmds.parent(shape_node, transform_name, shape=True, relative=True)
 
         # Set line properties
@@ -613,119 +615,120 @@ def visualize_correspondences(
         # Delete the temporary curve transform
         cmds.delete(temp_curve)
 
-    return transform_name   
+    return transform_name
 
 
 @one_undo
 @viewport_off
 @autokey_off
-@timeit       
+@timeit
 def find_correspondence_pairs(
-        source_mesh: Union[str, MeshObject],
-        target_mesh: Union[str, MeshObject],
-        sample_rate: float = 0.5,
-        sample_number: int = 16, 
-        sample_degree: float = 45.0,
-        weight_decay: float = 2.0,
-        align_spaces: bool = True,
-        visualize: bool = False,
-        num_threads: Optional[int] = None,
-        options: Optional[RegistrationOptions] = None) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
+    source_mesh: Union[str, MeshObject],
+    target_mesh: Union[str, MeshObject],
+    sample_rate: float = 0.5,
+    sample_number: int = 16,
+    sample_degree: float = 45.0,
+    weight_decay: float = 2.0,
+    align_spaces: bool = True,
+    visualize: bool = False,
+    num_threads: Optional[int] = None,
+    options: Optional[RegistrationOptions] = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Find correspondence points between two skinned meshes.
-    
+
     This is the main entry point for mesh registration. It identifies corresponding points
     between two skinned meshes with different topologies, using skeletal information to
     guide the mapping process. These correspondence points can be used for RBF interpolation
     when transferring attributes between the meshes.
-    
+
     The function performs the following steps:
     1. Analyze skeletal information from both meshes
     2. Optionally align source and target spaces
     3. Identify potential correspondence points via ray-casting
     4. Filter and optimize correspondence pairs
     5. Optionally visualize the results
-    
+
     Args:
         source_mesh: Source mesh name or MeshObject instance.
             This is the mesh that will be mapped to the target.
-        
+
         target_mesh: Target mesh name or MeshObject instance.
             This is the mesh that the source will be mapped to.
-        
+
         sample_rate: Vertex sampling rate (0.0-1.0).
             Determines what percentage of vertices to process. Lower values process
             fewer vertices for faster performance, while higher values improve accuracy.
             Default: 0.5 (50% of vertices)
-        
+
         sample_number: Number of sample rays per point.
             Higher values improve accuracy but increase processing time.
             Default: 32 rays
-        
+
         sample_degree: Raycast cone angle in degrees.
             Controls the angular spread of rays. Higher values cast rays in a wider
             cone, which helps detect more potential correspondences but may
             introduce noise. Lower values focus rays more directly.
             Default: 45.0 degrees
-        
+
         weight_decay: Weight decay coefficient.
             Controls how quickly the influence of a joint decreases with distance.
             Higher values cause more rapid falloff.
             Default: 2.0
-        
+
         align_spaces: Whether to align source and target coordinate spaces.
             When True, the function will attempt to transform the source mesh to align
             with the target mesh using the joint hierarchies before finding correspondences.
             Default: True
-        
+
         visualize: Whether to visualize correspondence results in the Maya viewport.
             When True, creates curve objects in Maya that connect corresponding points.
             Default: False
-        
+
         num_threads: Number of threads to use for parallel processing.
             If None, uses a reasonable default based on available CPU cores.
             Default: None (auto-detect)
-        
+
         options: Complete RegistrationOptions instance.
             If provided, these options override all individual parameters above.
             Use this for more advanced configuration.
             Default: None
-    
+
     Returns:
         A tuple containing two numpy arrays:
         - Source correspondence point coordinates (N, 3)
         - Target correspondence point coordinates (N, 3)
-        
+
         These point arrays can be used directly with RBF interpolation functions to
         transfer attributes between the meshes.
-        
+
     Example:
         Basic usage:
         ```python
         from ymt_mesh_retarget.registration import find_correspondence_pairs
-        
+
         source_points, target_points = find_correspondence_pairs(
             source_mesh="sourceCharacter",
             target_mesh="targetCharacter",
             visualize=True
         )
-        
+
         # Use the correspondences for attribute transfer
         # ...
         ```
-        
+
         Advanced usage with custom options:
         ```python
         from ymt_mesh_retarget.registration import (
-            find_correspondence_pairs, 
+            find_correspondence_pairs,
             get_default_registration_options
         )
-        
+
         # Customize options
         options = get_default_registration_options()
         options.sample_rate = 0.3  # Process 30% of vertices
         options.num_threads = 8    # Use 8 threads
         options.use_bvh = True     # Use BVH acceleration
-        
+
         # Find correspondences with custom options
         source_points, target_points = find_correspondence_pairs(
             source_mesh="sourceCharacter",
@@ -734,18 +737,18 @@ def find_correspondence_pairs(
             visualize=True
         )
         ```
-    
+
     Raises:
-        ValueError: If no skin cluster is found on either mesh, or if no correspondence 
+        ValueError: If no skin cluster is found on either mesh, or if no correspondence
                     points could be found between the meshes.
     """
     import multiprocessing
-    
+
     # If no thread count specified, use a reasonable default
     if num_threads is None:
         cpu_count = multiprocessing.cpu_count()
         num_threads = max(2, min(cpu_count - 1, 8))
-    
+
     # If options provided, use them; otherwise create from individual parameters
     if options is None:
         opts = RegistrationOptions(
@@ -754,14 +757,14 @@ def find_correspondence_pairs(
             sample_degree=sample_degree,
             weight_decay=weight_decay,
             align_spaces=align_spaces,
-            num_threads=num_threads
+            num_threads=num_threads,
         )
     else:
         opts = options
         # Override thread count if explicitly provided
         if num_threads is not None:
             opts.num_threads = num_threads
-    
+
     # Create registration object and find correspondence pairs
     registration = MeshRegistration(source_mesh, target_mesh, options=opts)
     source_points, target_points = registration.find_correspondence_pairs()

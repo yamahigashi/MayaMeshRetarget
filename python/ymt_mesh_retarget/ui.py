@@ -1,58 +1,60 @@
 # pyright: reportCallIssue=false,reportArgumentType=false,reportAttributeAccessIssue=false,reportMissingImports=false
 """This module contains the UI for the application."""
+
+from Qt.QtCore import (
+    QAbstractAnimation,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    Signal,
+)
+from Qt.QtWidgets import (  # type: ignore
+    QAbstractItemView,
+    QApplication,
+    QButtonGroup,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSpacerItem,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 from maya import cmds
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-from Qt.QtWidgets import (  # type: ignore
-    QApplication,
-    QWidget,
-    QButtonGroup,
-    QLineEdit,
-    QListWidget,
-    QPushButton,
-    QLabel,
-    QSlider,
-    QHBoxLayout,
-    QVBoxLayout,
-    QRadioButton,
-    QGroupBox,
-    QSpacerItem,
-    QSizePolicy,
-    QAbstractItemView,
-    QListWidgetItem,
-    QScrollArea,
-    QFrame,
-    QGridLayout,
-    QToolButton,
-    QComboBox,
-)
-
-from Qt.QtCore import (
-    Qt,
-    QSize,
-    Signal,
-    QParallelAnimationGroup,
-    QPropertyAnimation,
-    QAbstractAnimation,
-)
-
 from . import (
-    logic,
-    util,
     inpaint,
     logger,
+    logic,
+    util,
 )
+
 
 WINDOW_NAME = "RetargetingToolWindow"
 TITLE = "Retargeting Tool"
 LABEL_WIDTH = 90
 
+
 ########################################################################################################################
 class IntSlider(QWidget):
-    def __init__(self, label, minimum=0, maximum=100, interval=5, initial_value=5):
+    def __init__(self, label, minimum=0, maximum=100, interval=5, initial_value=5) -> None:
         # type: (str, int, int, int, int) -> None
 
-        super(IntSlider, self).__init__()
+        super().__init__()
 
         self.sizePolicy().setHorizontalPolicy(QSizePolicy.MinimumExpanding)
         self.sizePolicy().setVerticalPolicy(QSizePolicy.MinimumExpanding)
@@ -64,7 +66,7 @@ class IntSlider(QWidget):
 
         self.initUI(label, initial_value)
 
-    def initUI(self, label, initial_value):
+    def initUI(self, label, initial_value) -> None:
         # Create the slider and the label
         self.label = QLabel(label, self)
         self.label.setFixedWidth(LABEL_WIDTH - 7)
@@ -73,13 +75,13 @@ class IntSlider(QWidget):
         self.value_display.setFixedWidth(40)
         self.value_display.setAlignment(Qt.AlignRight)
         self.slider = QSlider(Qt.Horizontal, self)
-        
+
         # Set the range of the slider
         self.slider.setMinimum(self.minimum)
         self.slider.setMaximum(self.maximum)
         self.slider.setTickInterval(self.interval)
         self.slider.setValue(initial_value)
-        
+
         # Connect the valueChanged signal to the slot
         self.slider.valueChanged.connect(self.updateValueDisplay)
 
@@ -96,21 +98,21 @@ class IntSlider(QWidget):
         """Return the size hint of the widget."""
         return QSize(300, 30)
 
-    def updateValueDisplay(self, value):
+    def updateValueDisplay(self, value) -> None:
         self.value_display.setText(str(value))
 
     def value(self):
         return self.slider.value()
 
-    def setValue(self, value):
+    def setValue(self, value) -> None:
         self.slider.setValue(value)
 
 
 class FloatSlider(QWidget):
-    def __init__(self, label, minimum=0.0, maximum=1.0, interval=0.05, step=0.001, initial_value=0.05):
+    def __init__(self, label, minimum=0.0, maximum=1.0, interval=0.05, step=0.001, initial_value=0.05) -> None:
         # type: (str, float, float, float, float, float) -> None
 
-        super(FloatSlider, self).__init__()
+        super().__init__()
 
         self.sizePolicy().setHorizontalPolicy(QSizePolicy.MinimumExpanding)
         self.sizePolicy().setVerticalPolicy(QSizePolicy.MinimumExpanding)
@@ -124,23 +126,23 @@ class FloatSlider(QWidget):
 
         self.initUI(label, initial_value)
 
-    def initUI(self, label, initial_value):
+    def initUI(self, label, initial_value) -> None:
         # Create the slider and the label
         self.label = QLabel(label, self)
         self.label.setFixedWidth(LABEL_WIDTH - 7)
         self.label.setAlignment(Qt.AlignRight)
-        self.value_display = QLabel("{:.3f}".format(initial_value), self)
+        self.value_display = QLabel(f"{initial_value:.3f}", self)
         self.value_display.setFixedWidth(40)
         self.value_display.setAlignment(Qt.AlignRight)
         self.slider = QSlider(Qt.Horizontal, self)
-        
+
         # Set the range and step of the slider
         self.slider.setMinimum(self.minimum * self.value_multiplier)
         self.slider.setMaximum(self.maximum * self.value_multiplier)
         self.slider.setTickInterval(self.interval * self.value_multiplier)
         self.slider.setSingleStep(self.step * self.value_multiplier)
         self.slider.setValue(initial_value * self.value_multiplier)
-        
+
         # Connect the valueChanged signal to the slot
         self.slider.valueChanged.connect(self.updateValueDisplay)
 
@@ -156,28 +158,27 @@ class FloatSlider(QWidget):
         """Return the size hint of the widget."""
         return QSize(300, 30)
 
-    def updateValueDisplay(self, value):
+    def updateValueDisplay(self, value) -> None:
         # Calculate the float value based on the slider's integer value
         float_value = value / self.value_multiplier
-        self.value_display.setText("{:.3f}".format(float_value))
+        self.value_display.setText(f"{float_value:.3f}")
 
     def value(self):
         # Get the current float value of the slider
         return self.slider.value() / self.value_multiplier
 
-    def setValue(self, float_value):
+    def setValue(self, float_value) -> None:
         # Set the value of the slider using a float
         self.slider.setValue(int(float_value * self.value_multiplier))
 
 
 class ToggleGroupBox(QWidget):
-    def __init__(self, parent=None, title='', animationDuration=300):
+    def __init__(self, parent=None, title="", animationDuration=300) -> None:
+        """References:
+        # Adapted from c++ version
+        http://stackoverflow.com/questions/32476006/how-to-make-an-expandable-collapsable-section-widget-in-qt.
         """
-        References:
-            # Adapted from c++ version
-            http://stackoverflow.com/questions/32476006/how-to-make-an-expandable-collapsable-section-widget-in-qt
-        """
-        super(ToggleGroupBox, self).__init__()
+        super().__init__()
 
         self.animationDuration = animationDuration
         self.toggleAnimation = QParallelAnimationGroup()
@@ -220,7 +221,7 @@ class ToggleGroupBox(QWidget):
         mainLayout.addWidget(self.contentArea, row, 0, 1, 3)
         self.setLayout(self.mainLayout)
 
-        def start_animation(checked):
+        def start_animation(checked) -> None:
             arrow_type = Qt.DownArrow if checked else Qt.RightArrow
             direction = QAbstractAnimation.Forward if checked else QAbstractAnimation.Backward
             toggleButton.setArrowType(arrow_type)
@@ -229,13 +230,13 @@ class ToggleGroupBox(QWidget):
 
         self.toggleButton.clicked.connect(start_animation)
 
-    def setContentLayout(self, contentLayout):
+    def setContentLayout(self, contentLayout) -> None:
         # Not sure if this is equivalent to self.contentArea.destroy()
         self.contentArea.destroy()
         self.contentArea.setLayout(contentLayout)
         collapsedHeight = self.sizeHint().height() - self.contentArea.maximumHeight()
         contentHeight = contentLayout.sizeHint().height()
-        for i in range(self.toggleAnimation.animationCount()-1):
+        for i in range(self.toggleAnimation.animationCount() - 1):
             spoilerAnimation = self.toggleAnimation.animationAt(i)
             spoilerAnimation.setDuration(self.animationDuration)
             spoilerAnimation.setStartValue(collapsedHeight)
@@ -245,39 +246,39 @@ class ToggleGroupBox(QWidget):
         contentAnimation.setStartValue(0)
         contentAnimation.setEndValue(contentHeight)
 
-class ClickableLineEdit(QLineEdit):
 
+class ClickableLineEdit(QLineEdit):
     double_clicked = Signal()
     clicked = Signal()
 
-    def __init__(self, parent=None):
-        super(ClickableLineEdit, self).__init__(parent)
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
 
-    def mouseDoubleClickEvent(self, event):
+    def mouseDoubleClickEvent(self, event) -> None:
         self.double_clicked.emit()
-        super(ClickableLineEdit, self).mouseDoubleClickEvent(event)
+        super().mouseDoubleClickEvent(event)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event) -> None:
         self.clicked.emit()
-        super(ClickableLineEdit, self).mousePressEvent(event)
+        super().mousePressEvent(event)
 
 
 class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
-
-    def __init__(self,
-                 parent=None,
-                 src=None,
-                 dst=None,
-                 objects=None,
-                 inpaint=False,
-                 inpaint_mode="distance",
-                 distance=0.1,
-                 angle=180.0,
-                 sampling_stride=1,
-                 apply_rigid_transform=True
-    ):
+    def __init__(
+        self,
+        parent=None,
+        src=None,
+        dst=None,
+        objects=None,
+        inpaint=False,
+        inpaint_mode="distance",
+        distance=0.1,
+        angle=180.0,
+        sampling_stride=1,
+        apply_rigid_transform=True,
+    ) -> None:
         # type: (QWidget|None, str|None, str|None, list[str]|None, bool, str, float, float, int, bool) -> None
-        super(RetargetingToolWindow, self).__init__(parent)
+        super().__init__(parent)
 
         self.initUI()
         if src:
@@ -306,7 +307,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def initUI(self):
+    def initUI(self) -> None:
         # type: () -> None
 
         # -----------------------------------------------
@@ -325,7 +326,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.src_button = QPushButton("set", self)
         self.src_button.clicked.connect(self.setObject)
         self.src_button.setFixedWidth(50)
-        
+
         self.dst_label = QLabel("Target:", self)
         self.dst_label.setAlignment(Qt.AlignRight)
         self.dst_label.setFixedWidth(LABEL_WIDTH)
@@ -399,8 +400,12 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.inpaint_button_group2 = QButtonGroup(self.settings_group_box)
         self.inpaint_button_group2.addButton(self.inpaint_mode_dist)
         self.inpaint_button_group2.addButton(self.inpaint_mode_selection)
-        self.dist_slider = FloatSlider("distance:", minimum=0.000001, maximum=0.3, interval=0.01, step=0.001, initial_value=0.1)
-        self.angle_slider = FloatSlider("angle:", minimum=0.0, maximum=180.0, interval=1.0, step=0.5, initial_value=180.0)
+        self.dist_slider = FloatSlider(
+            "distance:", minimum=0.000001, maximum=0.3, interval=0.01, step=0.001, initial_value=0.1,
+        )
+        self.angle_slider = FloatSlider(
+            "angle:", minimum=0.0, maximum=180.0, interval=1.0, step=0.5, initial_value=180.0,
+        )
 
         # -----------------------------------------------
         self.utility_group_box = QGroupBox("Utility")
@@ -410,7 +415,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.restructure_button.clicked.connect(self.restructureButtonClicked)
         self.select_inpaint_area_button = QPushButton("Select inpaint area", self)
         self.select_inpaint_area_button.clicked.connect(self.selectInpaintArea)
-        
+
         # Logging controls
         self.log_level_label = QLabel("Log Level:", self)
         self.log_level_label.setFixedWidth(LABEL_WIDTH)
@@ -466,7 +471,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         # self.object_type_joint.toggled.connect(self.objectTypeToggled)
         # self.object_type_transform = QRadioButton("Transform", self)
         # self.object_type_transform.toggled.connect(self.objectTypeToggled)
-        # 
+        #
         # # 階層維持オプション
         # self.hierarchy_label = QLabel("Maintain Hierarchy:", self)
         # self.hierarchy_label.setAlignment(Qt.AlignRight)
@@ -520,15 +525,15 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         log_level_layout = QHBoxLayout()
         log_level_layout.addWidget(self.log_level_label)
         log_level_layout.addWidget(self.log_level_combo)
-        
+
         # Utility group box layout
         utility_group_box_layout = QVBoxLayout()
-        
+
         # Add buttons in the first row
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self.restructure_button)
         buttons_layout.addWidget(self.select_inpaint_area_button)
-        
+
         utility_group_box_layout.addLayout(buttons_layout)
         utility_group_box_layout.addLayout(log_level_layout)
         self.utility_group_box.setLayout(utility_group_box_layout)
@@ -554,10 +559,9 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.setWindowTitle(TITLE)
         self.show()
 
-    def setObject(self):
+    def setObject(self) -> None:
         # type: () -> None
         """Insert text into the line edit."""
-
         selection = cmds.ls(sl=True, objectsOnly=True)
         if not selection:
             cmds.warning("Nothing is selected")
@@ -567,14 +571,12 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         sender = self.sender()
         if sender == self.src_button:
-
             if self.src_line_edit.text() != sel:
                 self.clear()
 
             self.src_line_edit.setText(sel)
 
         elif sender == self.dst_button:
-
             if self.dst_line_edit.text() != sel:
                 self.clear()
 
@@ -583,31 +585,25 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def selectSourceObject(self):
+    def selectSourceObject(self) -> None:
         # type: () -> None
         """Select the source mesh."""
-
         self.selectObject(self.src_line_edit.text())
 
-    def selectTargetObject(self):
+    def selectTargetObject(self) -> None:
         # type: () -> None
         """Select the target mesh."""
-
         self.selectObject(self.dst_line_edit.text())
 
-    def selectRetargetObject(self, item):
+    def selectRetargetObject(self, item) -> None:
         # type: (QListWidgetItem) -> None
         """Select the target mesh."""
-        if isinstance(item, QListWidgetItem):
-            name = item.text()
-        else:
-            name = item
+        name = item.text() if isinstance(item, QListWidgetItem) else item
         self.selectObject(name)
 
-    def selectObject(self, mesh):
+    def selectObject(self, mesh) -> None:
         # type: (str) -> None
         """Select the mesh from the line edit."""
-
         if not mesh:
             cmds.warning("No mesh selected.")
             return
@@ -627,10 +623,9 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         else:
             cmds.select(mesh)
 
-    def addRetargetObject(self):
+    def addRetargetObject(self) -> None:
         # type: () -> None
         """Add a mesh to the list of objects to retarget."""
-
         selected = cmds.ls(selection=True, type="transform")
         if not selected:
             cmds.warning("No objects selected to add.")
@@ -647,7 +642,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def removeSelectedObjects(self):
+    def removeSelectedObjects(self) -> None:
         # リスト内で選択されているメッシュを削除
         selected_items = self.ret_list_widget.selectedItems()
         if not selected_items:
@@ -660,29 +655,25 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def clearSelectedObjects(self):
+    def clearSelectedObjects(self) -> None:
         # リスト内の全てのメッシュを削除
         self.ret_list_widget.clear()
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
 
-    def clear(self):
+    def clear(self) -> None:
         # type: () -> None
         pass
 
-    def hasMesh(self, mesh):
+    def hasMesh(self, mesh) -> bool:
         # type: (str) -> bool
         """Check if the mesh exists in the scene."""
         m = cmds.listRelatives(mesh, children=True, shapes=True)
-        if not m:
-            return False
+        return m
 
-        return True
-
-    def updateValueDisplay(self):
+    def updateValueDisplay(self) -> None:
         # type: () -> None
         """Update the value display label."""
-
         sender = self.sender()
         if sender == self.dist_slider:
             self.dist_value_display.setText(str(self.dist_slider.value()))
@@ -690,13 +681,11 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         elif sender == self.angle_slider:
             self.angle_value_display.setText(str(self.angle_slider.value()))
 
-    def rigidModeToggled(self):
-        if self.rigid_on.isChecked():
-            pass
-        elif self.rigid_off.isChecked():
+    def rigidModeToggled(self) -> None:
+        if self.rigid_on.isChecked() or self.rigid_off.isChecked():
             pass
 
-    def inpaintModeToggled(self):
+    def inpaintModeToggled(self) -> None:
         if self.inpaint_mode_dist.isChecked():
             self.dist_slider.setEnabled(True)
             self.angle_slider.setEnabled(True)
@@ -705,13 +694,13 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             self.dist_slider.setEnabled(False)
             self.angle_slider.setEnabled(False)
 
-    def inpaintOnOffToggled(self):
+    def inpaintOnOffToggled(self) -> None:
         if self.inpaint_on.isChecked():
             self.inpaint_settings_group_box.setEnabled(True)
         elif self.inpaint_off.isChecked():
             self.inpaint_settings_group_box.setEnabled(False)
 
-    def restructureButtonClicked(self):
+    def restructureButtonClicked(self) -> None:
         # type: () -> None
         """Restructure the selected objects."""
         suffixs = []
@@ -721,7 +710,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             suffixs.append("inpaint")
         util.restructure_meshes_hierarchy(suffix="_".join(suffixs))
 
-    def selectInpaintArea(self):
+    def selectInpaintArea(self) -> None:
         # type: () -> None
         """Restructure the selected objects."""
         src = self.src_line_edit.text()
@@ -738,13 +727,13 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             return
 
         inpaint.select_inpaint_area(src, dsts, dist, angle)
-        
-    def logLevelChanged(self, level_text):
+
+    def logLevelChanged(self, level_text) -> None:
         """Change the logging level based on the combo box selection."""
         logger.set_log_level(level_text)
         logger.info(f"Logging level changed to {level_text}")
 
-    def checkToExecute(self):
+    def checkToExecute(self) -> bool:
         # type: () -> bool
         """Check if the tool is ready to execute."""
         if not self.src_line_edit.text():
@@ -765,10 +754,9 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         return True
 
-    def executeButtonClicked(self):
+    def executeButtonClicked(self) -> None:
         # type: () -> None
         """Search for vertices to transfer weights from."""
-
         if not self.checkToExecute():
             cmds.warning("Please set source, target, and retarget objects.")
             return
@@ -791,13 +779,13 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
             angle=angle,
             sampling_stride=sampling_stride,
             apply_rigid_transform=apply_rigid_transform,
-            inpaint=inpaint
+            inpaint=inpaint,
         )
 
         cmds.select(objects)
 
 
-def show_ui():
+def show_ui() -> None:
     # type: () -> None
     """Show the UI."""
     global MAIN_WIDGET
@@ -815,9 +803,8 @@ def show_ui():
 
     # close all previous windows
     all_widgets = {w.objectName(): w for w in QApplication.allWidgets()}
-    for k, v in all_widgets.items():
+    for _k, v in all_widgets.items():
         if v.__class__.__name__ == WINDOW_NAME:
-
             src = v.src_line_edit.text()
             dst = v.dst_line_edit.text()
             objects = [v.ret_list_widget.item(i).text() for i in range(v.ret_list_widget.count())]
@@ -841,7 +828,7 @@ def show_ui():
         distance=distance,
         angle=angle,
         sampling_stride=sampling_stride,
-        apply_rigid_transform=apply_rigid_transform
+        apply_rigid_transform=apply_rigid_transform,
     )
     main_widget.show()
     if pos:

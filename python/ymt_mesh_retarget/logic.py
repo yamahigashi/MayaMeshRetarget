@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-Mesh Retargeting Tool
+"""Mesh Retargeting Tool.
 
-This module provides functionality for retargeting mesh deformation using radial basis functions (RBF) 
-and skin weight-based clustering. It is designed for use with Autodesk Maya and leverages both 
+This module provides functionality for retargeting mesh deformation using radial basis functions (RBF)
+and skin weight-based clustering. It is designed for use with Autodesk Maya and leverages both
 OpenMaya API and SciPy for mesh manipulation and deformation.
 
 Main Features:
@@ -20,38 +18,38 @@ Usage:
 3. Run the retargeting function to apply the transformation to a target mesh or set of meshes.
 
 """
+
 import time
+import typing
+
+from scipy.spatial.distance import cdist
 
 import numpy as np
-from scipy.spatial.distance import cdist
-# from scipy.spatial.transform import Rotation  # TODO: implement later
-from sklearn.decomposition import PCA
-
+from maya import cmds, mel
 from maya.api import (
     OpenMaya as om,
 )
-from maya import (
-    mel,
-    cmds
-)
+
+# from scipy.spatial.transform import Rotation  # TODO: implement later
+from sklearn.decomposition import PCA
 
 from . import (
     # inpaint,
     # cluster,
     util,
 )
-
 from .objects import (
-    create_retargetable_object,
     MeshObject,
+    create_retargetable_object,
 )
 from .objects.base import RetargetableObject  # noqa: F401
 
-import typing  # noqa: F401
+
 if typing.TYPE_CHECKING:
     from typing import (
-        Callable,  # noqa: F401
+        Callable,
     )
+
     Kernel = Callable[[np.ndarray, float], np.ndarray]
 
 
@@ -59,24 +57,24 @@ if typing.TYPE_CHECKING:
 class RBF:
     """Various RBF kernels for mesh deformation using radial basis functions.
 
-    Each RBF kernel uses a distance matrix and a radius to control the smoothing 
-    and influence range of the deformation. The `radius` parameter acts as a 
-    scaling factor for the distances between vertices and influences how far 
+    Each RBF kernel uses a distance matrix and a radius to control the smoothing
+    and influence range of the deformation. The `radius` parameter acts as a
+    scaling factor for the distances between vertices and influences how far
     the deformation extends across the mesh.
 
     - A smaller `radius` will result in sharper, more localized deformations.
-    - A larger `radius` will produce smoother, more gradual deformations over 
+    - A larger `radius` will produce smoother, more gradual deformations over
       a broader area.
 
-    In practice, `radius` should be selected relative to the size of the target 
-    mesh. A common approach is to base the `radius` on the diagonal length of 
-    the target mesh's bounding box, scaled by a coefficient. This allows the 
+    In practice, `radius` should be selected relative to the size of the target
+    mesh. A common approach is to base the `radius` on the diagonal length of
+    the target mesh's bounding box, scaled by a coefficient. This allows the
     deformation to adapt to the scale of the mesh.
 
     Example:
     --------
-    If the bounding box of the target mesh has a diagonal length of 10 units, 
-    a coefficient of 0.1 would give a `radius` of 1 unit, which provides 
+    If the bounding box of the target mesh has a diagonal length of 10 units,
+    a coefficient of 0.1 would give a `radius` of 1 unit, which provides
     a reasonable balance between local and global deformations.
 
     """
@@ -91,18 +89,18 @@ class RBF:
     def gaussian(cls, matrix, radius):
         # type: (np.ndarray, float) -> np.ndarray
         """Gaussian RBF - Distances are scaled using a Gaussian decay function.
-        
+
         This kernel is effective for producing smooth, gradual deformations.
         A smaller `radius` leads to faster decay and more localized effects.
         """
-        return np.exp(-(matrix ** 2) / (radius ** 2))
+        return np.exp(-(matrix**2) / (radius**2))
 
     @classmethod
     def thin_plate(cls, matrix, radius):
         # type: (np.ndarray, float) -> np.ndarray
         """Thin plate spline RBF - Produces smooth, surface-based deformations.
 
-        The `radius` scales the distances and determines the curvature of 
+        The `radius` scales the distances and determines the curvature of
         the deformation. Smaller radii result in sharper curvatures.
         """
         result = (matrix / radius) ** 2
@@ -119,25 +117,25 @@ class RBF:
         The `radius` controls the extent of influence. Larger values result in
         broader, smoother deformations.
         """
-        return np.sqrt((matrix ** 2) + (radius ** 2))
+        return np.sqrt((matrix**2) + (radius**2))
 
     @classmethod
     def inv_multi_quadratic_biharmonic(cls, matrix, radius):
         # type: (np.ndarray, float) -> np.ndarray
         """Inverse multi-quadratic biharmonic RBF - Inverse decay of distances.
 
-        The `radius` determines the decay rate. Small radii yield sharp fall-offs, 
+        The `radius` determines the decay rate. Small radii yield sharp fall-offs,
         while larger radii provide broader influences.
         """
-        return 1.0 / np.sqrt((matrix ** 2) + (radius ** 2))
+        return 1.0 / np.sqrt((matrix**2) + (radius**2))
 
     @classmethod
     def beckert_wendland_c2_basis(cls, matrix, radius):
         # type: (np.ndarray, float) -> np.ndarray
         """Beckert-Wendland C2 basis RBF - Compact support kernel.
 
-        This RBF produces localized deformations within a certain radius. 
-        The `radius` parameter defines the extent of this support, with 
+        This RBF produces localized deformations within a certain radius.
+        The `radius` parameter defines the extent of this support, with
         smaller values yielding more localized effects.
         """
         arg = matrix / radius
@@ -149,14 +147,13 @@ class RBF:
 def __select_rbf_kernel(kernel_name):
     # type: (str) -> Kernel
     """Select an RBF kernel by name."""
-
     kernels = {
         "linear": RBF.linear,
         "gaussian": RBF.gaussian,
         "thin_plate": RBF.thin_plate,
         "multi_quadratic": RBF.multi_quadratic_biharmonic,
         "inv_multi_quadratic": RBF.inv_multi_quadratic_biharmonic,
-        "beckert_wendland": RBF.beckert_wendland_c2_basis
+        "beckert_wendland": RBF.beckert_wendland_c2_basis,
     }
 
     if kernel_name not in kernels:
@@ -170,14 +167,16 @@ def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius, ep
     """Calculate the weight matrix for the RBF interpolation."""
     identity = np.ones((source_points.shape[0], 1))
     dist = get_distance_matrix(source_points, source_points, kernel, radius)
-    dist += np.eye(dist.shape[0]) * epsilon  
+    dist += np.eye(dist.shape[0]) * epsilon
 
     dim = 3
-    a = np.bmat([
-        [dist, identity, source_points],
-        [identity.T, np.zeros((1, 1)), np.zeros((1, dim))],
-        [source_points.T, np.zeros((dim, 1)), np.zeros((dim, dim))]
-    ])
+    a = np.bmat(
+        [
+            [dist, identity, source_points],
+            [identity.T, np.zeros((1, 1)), np.zeros((1, dim))],
+            [source_points.T, np.zeros((dim, 1)), np.zeros((dim, dim))],
+        ],
+    )
     b = np.bmat([[target_points], [np.zeros((1, dim))], [np.zeros((dim, dim))]])
 
     try:
@@ -185,8 +184,10 @@ def calculate_rbf_weight_matrix(source_points, target_points, kernel, radius, ep
     except np.linalg.LinAlgError:
         rank_a = np.linalg.matrix_rank(a)
         rank_b = np.linalg.matrix_rank(b)
-        mes = "Singular matrix - check the source points for duplicates" \
-                ", the rank of A is {} and the rank of B is {}".format(rank_a, rank_b)
+        mes = (
+            "Singular matrix - check the source points for duplicates"
+            f", the rank of A is {rank_a} and the rank of B is {rank_b}"
+        )
         raise ValueError(mes)
 
 
@@ -204,19 +205,19 @@ def get_distance_matrix(v1, v2, kernel, radius):
 ##############################################################################
 @util.timeit
 def retarget(
-        source,
-        target,
-        objects,
-        kernel=RBF.linear,
-        radius_coefficient=0.0005,
-        angle=180.0,
-        sampling_stride=1,
-        apply_rigid_transform=False,
-        inpaint=True,
-        maintain_hierarchy=True
+    source,
+    target,
+    objects,
+    kernel=RBF.linear,
+    radius_coefficient=0.0005,
+    angle=180.0,
+    sampling_stride=1,
+    apply_rigid_transform=False,
+    inpaint=True,
+    maintain_hierarchy=True,
 ):
     # type: (str, str, list[str]|str, Kernel|str, float, float, int, bool, bool, bool) -> list[str]
-    """Run the mesh retarget
+    """Run the mesh retarget.
 
     :param source: Source mesh
     :param target: Modified source mesh
@@ -231,8 +232,8 @@ def retarget(
     source_obj = create_retargetable_object(source)
     target_obj = create_retargetable_object(target)
 
-    source_dag = util.get_mesh_dag(source)
-    target_dag = util.get_mesh_dag(target)
+    util.get_mesh_dag(source)
+    util.get_mesh_dag(target)
 
     retarget_objects = []
     for obj in objects:
@@ -250,13 +251,8 @@ def retarget(
 
     bar = mel.eval("$tmp = $gMainProgressBar")
     if not cmds.about(batch=True):
-        cmds.progressBar(
-                bar,
-                edit=True,
-                beginProgress=True,
-                status="Preparing Retargeting",
-                maxValue=100)
-    
+        cmds.progressBar(bar, edit=True, beginProgress=True, status="Preparing Retargeting", maxValue=100)
+
     try:
         # リターゲット処理の実行
         result = __retarget(
@@ -269,7 +265,7 @@ def retarget(
             sampling_stride,
             apply_rigid_transform,
             inpaint,
-            maintain_hierarchy
+            maintain_hierarchy,
         )
         return result
     finally:
@@ -284,16 +280,16 @@ def retarget(
 
 
 def __retarget(
-        source_obj,
-        target_obj,
-        retarget_objects,
-        kernel,
-        radius_coefficient,
-        angle,
-        sampling_stride,
-        apply_rigid_transform,
-        inpaint,
-        maintain_hierarchy
+    source_obj,
+    target_obj,
+    retarget_objects,
+    kernel,
+    radius_coefficient,
+    angle,
+    sampling_stride,
+    apply_rigid_transform,
+    inpaint,
+    maintain_hierarchy,
 ):
     # type: (RetargetableObject, RetargetableObject, list[RetargetableObject], Kernel, float, float, int, bool, bool, bool) -> list[om.MDagPath]
     """Run the mesh retarget.
@@ -305,9 +301,8 @@ def __retarget(
     :param sampling_stride: Vertex sampling_stride to sample on the source mesh. Increase to speed up
                    the calculation but less accurate.
     :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
-    :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices
+    :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices.
     """
-
     # Extract points from source and target meshes
     source_points = source_obj.get_points(sampling_stride)
     target_points = target_obj.get_points(sampling_stride)
@@ -317,14 +312,14 @@ def __retarget(
 
     radius = source_obj.calculate_threshold_distance(radius_coefficient)
     weights = calculate_rbf_weight_matrix(source_points, target_points, kernel, radius)
-    
+
     # オブジェクトごとに処理
     results = []
     for obj in retarget_objects:
         # オブジェクトの複製
         new_obj = obj.duplicate()
         print(f"Processing {new_obj.name}")
-        
+
         # 変形処理（オブジェクトのタイプに応じた処理が内部で実行される）
         __apply_rbf_deformation(
             source_obj,
@@ -338,33 +333,33 @@ def __retarget(
             sampling_stride,
             apply_rigid_transform,
             inpaint,
-            maintain_hierarchy
+            maintain_hierarchy,
         )
-        
+
         results.append(new_obj.name)
-    
+
     return results
 
 
 @util.timeit
 def __apply_rbf_deformation(
-        source_obj,
-        target_obj,
-        original_obj,
-        new_obj,
-        weights,
-        kernel,
-        radius_coefficient,
-        angle,
-        sampling_stride=1,
-        apply_rigid_transform=False,
-        inpaint=True,
-        maintain_hierarchy=True
-):
-    """RBF変形を適用する関数
-    
+    source_obj,
+    target_obj,
+    original_obj,
+    new_obj,
+    weights,
+    kernel,
+    radius_coefficient,
+    angle,
+    sampling_stride=1,
+    apply_rigid_transform=False,
+    inpaint=True,
+    maintain_hierarchy=True,
+) -> None:
+    """RBF変形を適用する関数.
+
     異なるオブジェクトタイプに共通のRBF変形処理を実装
-    
+
     :param source_obj: ソースオブジェクト (RetargetableObject)
     :param target_obj: ターゲットオブジェクト (RetargetableObject)
     :param original_obj: 変形元オブジェクト (RetargetableObject)
@@ -381,87 +376,90 @@ def __apply_rbf_deformation(
     # ソース点群とオブジェクトの点群を取得
     source_points = source_obj.get_points(sampling_stride)
     object_points = original_obj.get_points()
-    
+
     # 半径を計算
     radius = source_obj.calculate_threshold_distance(radius_coefficient)
-    
+
     # ソースとオブジェクト間の距離行列を計算
     distances = get_distance_matrix(object_points, source_points, kernel, radius)
-    
+
     # オブジェクトの完全な変換情報を取得
     transforms = original_obj.get_transforms()
-    
+
     # メッシュ特有の処理（クラスタリングとインペイント）
     labels = None
     if apply_rigid_transform and isinstance(original_obj, MeshObject):
         # メッシュの場合はクラスタリングを実行
         labels = original_obj.cluster_vertices()
-        
+
         if inpaint:
             # 距離行列のインペイント
             distances = original_obj.inpaint_distance_matrix(
-                source_obj.dag_path, distances, labels, 
-                radius_coefficient, angle
+                source_obj.dag_path,
+                distances,
+                labels,
+                radius_coefficient,
+                angle,
             )
-    
+
     # RBF補間を使用して変換後のポイントを計算
     identity = np.ones((object_points.shape[0], 1))
     h_combined = np.bmat([[distances, identity, object_points]])
     deformed_points = np.dot(h_combined, weights)
-    
+
     # 変換情報構造体を更新
     for i, transform in enumerate(transforms):
         # インデックスが範囲内にあることを確認
         if i < len(deformed_points):
             transform["position"] = deformed_points[i]
-   
+
     # TODO: implement later
     # 回転とスケールの処理（メッシュ以外の場合）
     # if not isinstance(original_obj, MeshObject):
     #     # ソースとターゲットの変換情報
     #     source_transforms = source_obj.get_transforms()
     #     target_transforms = target_obj.get_transforms()
-    #     
+    #
     #     # 各変換情報に対して処理
     #     for i, transform in enumerate(transforms):
     #         # 最も近いソースポイントを見つける
     #         source_positions = np.array([t["position"] for t in source_transforms])
-    # 
+    #
     #         closest_idx = np.argmin(np.sum((transform["position"] - source_positions)**2, axis=1))
-    #         
+    #
     #         # 回転の補間
     #         if "rotation" in transform and closest_idx < len(source_transforms):
     #             source_rot = Rotation.from_quat(source_transforms[closest_idx]["rotation"])
     #             target_rot = Rotation.from_quat(target_transforms[closest_idx]["rotation"])
-    #             
+    #
     #             # ソースからターゲットへの相対回転を計算
     #             rel_rot = source_rot.inv() * target_rot
-    #             
+    #
     #             # 元の回転に相対回転を適用
     #             orig_rot = Rotation.from_quat(transform["rotation"])
     #             transform["rotation"] = (orig_rot * rel_rot).as_quat()
-    #         
+    #
     #         # スケールの補間
     #         if "scale" in transform and closest_idx < len(source_transforms):
     #             source_scale = source_transforms[closest_idx]["scale"]
     #             target_scale = target_transforms[closest_idx]["scale"]
-    #             
+    #
     #             # スケール比率を計算
     #             scale_ratio = target_scale / np.maximum(source_scale, 1e-6)
     #             transform["scale"] = transform["scale"] * scale_ratio
-    
+
     # 剛体変換の適用（メッシュのクラスタリング時）
     if apply_rigid_transform and labels is not None:
         transforms = __apply_rigid_transform_to_clusters(
-            original_obj.get_points(), 
+            original_obj.get_points(),
             deformed_points,
             labels,
-            transforms
+            transforms,
         )
-    
+
     # 変換を新しいオブジェクトに適用
     new_obj.apply_transforms(transforms)
-    
+
     # 階層構造を処理（maintain_hierarchyがTrueの場合）
     if maintain_hierarchy:
         # 子オブジェクトを処理
@@ -471,86 +469,94 @@ def __apply_rbf_deformation(
             # 対応する新しい子オブジェクトを見つける
             new_child_name = f"{child.name.split('|')[-1]}_retarget"
             new_child = None
-            
+
             for potential_child in new_obj.get_children():
                 if potential_child.name.endswith(new_child_name):
                     new_child = potential_child
                     break
-            
+
             if new_child:
                 # 子オブジェクトに対しても再帰的に処理を適用
                 __apply_rbf_deformation(
-                    source_obj, target_obj, child, new_child,
-                    weights, kernel, radius_coefficient, angle,
-                    sampling_stride, apply_rigid_transform, inpaint, maintain_hierarchy
+                    source_obj,
+                    target_obj,
+                    child,
+                    new_child,
+                    weights,
+                    kernel,
+                    radius_coefficient,
+                    angle,
+                    sampling_stride,
+                    apply_rigid_transform,
+                    inpaint,
+                    maintain_hierarchy,
                 )
+
 
 @util.timeit
 def __apply_rigid_transform_to_clusters(
-        before_points,
-        after_points,
-        labels,
-        transforms
+    before_points,
+    after_points,
+    labels,
+    transforms,
 ):
-    """クラスターごとに剛体変換を適用"""
+    """クラスターごとに剛体変換を適用."""
     unique_clusters = np.unique(labels[labels >= 0])
-    
+
     for cluster_id in unique_clusters:
         # クラスターに属するインデックスを取得
         cluster_indices = np.where(labels == cluster_id)[0]
-        
+
         # クラスターの点群
         before_cluster_points = before_points[cluster_indices]
         after_cluster_points = after_points[cluster_indices]
-        
+
         # PCA分析によるRST変換の適用
         # 平均位置の計算
         mean_before = np.mean(before_cluster_points, axis=0)
         mean_after = np.mean(after_cluster_points, axis=0)
-        
+
         # 中心化
         centered_before = np.asarray(before_cluster_points - mean_before)
         centered_after = np.asarray(after_cluster_points - mean_after)
-        
+
         # PCA分析
         pca_before = PCA(n_components=min(3, before_cluster_points.shape[0]))
         pca_before.fit(centered_before)
-        
+
         pca_after = PCA(n_components=min(3, after_cluster_points.shape[0]))
         pca_after.fit(centered_after)
-        
+
         # スケール係数の計算
         before_extent = np.sqrt(pca_before.explained_variance_)
         after_extent = np.sqrt(pca_after.explained_variance_)
         scale_factors = after_extent / np.maximum(before_extent, 1e-6)
         uniform_scale = np.mean(scale_factors)
-        
+
         # PCA空間でのスケーリング
         transformed_points = centered_before @ pca_before.components_.T
         scaled_points = transformed_points * uniform_scale
-        
+
         # 元の空間に戻す
         rigid_transformed_points = scaled_points @ pca_before.components_ + mean_after
-        
+
         # 変換情報を更新
         for i, idx in enumerate(cluster_indices):
             if idx < len(transforms):
                 transforms[idx]["position"] = rigid_transformed_points[i]
-    
+
     return transforms
 
 
 @util.timeit
 def __apply_uniform_scale_to_clusters(
-        before_points,
-        after_points,
-        labels,
-        weights
+    before_points,
+    after_points,
+    labels,
+    weights,
 ):
-
     unique_clusters = np.unique(labels[labels >= 0])
     for cluster_id in unique_clusters:
-
         cluster_indices = np.where(labels == cluster_id)[0]
         before_cluster_points = before_points[cluster_indices]
         after_cluster_points = after_points[cluster_indices]
@@ -564,7 +570,6 @@ def __apply_uniform_scale_to_clusters(
 def __calculate_mesh_distance_matrix(source_points, mesh_path, kernel, radius, weights, apply_rigid_transform):
     # type: (np.ndarray, om.MDagPath, Kernel, float, np.ndarray, bool) -> tuple[np.ndarray, np.ndarray]
     """Calculate the distance matrix for a single mesh."""
-
     points = util.convert_points_to_numpy(mesh_path)
 
     dist = get_distance_matrix(points, source_points, kernel, radius)
@@ -578,7 +583,6 @@ def __apply_rigid_transform_with_scaling(before_cluster_points, after_cluster_po
 
     The transformation consists of a rotation, translation, and uniform scaling.
     """
-
     # Calculate the mean position of the source and target clusters
     mean_position_source = np.mean(before_cluster_points, axis=0)
     mean_position_temp = np.mean(after_cluster_points, axis=0)
@@ -614,15 +618,14 @@ def __apply_rigid_transform_with_scaling(before_cluster_points, after_cluster_po
 def __apply_deformed_vertex_positions(mesh_path, deformed_points, apply_rigid_transform, inpaint):
     # type: (om.MDagPath, np.ndarray, bool, bool) -> om.MDagPath
     """Sets the deformed points to the mesh.
-    
+
     Duplicates the mesh and applies the deformed points.
-    
+
     :param mesh_path: The mesh to apply deformed positions
     :param deformed_points: The calculated deformed positions as a numpy array
     :param apply_rigid_transform: Whether to apply a rigid transformation to the deformed points
     :param inpaint: Whether to inpaint the distance matrix for unconvinced vertices
     """
-
     # Convert deformed points to MPoint objects for Maya
     deformed_mpoints = [om.MPoint(*p) for p in deformed_points.tolist()]
 

@@ -1,30 +1,28 @@
-from .ui import show_ui
-from .logic import retarget
+import contextlib
+
 from .logger import logger, set_log_level
+from .logic import retarget
+from .ui import show_ui
 
 
-def reload():
-    """Reload module files"""
-    import sys
+def reload() -> None:
+    """Reload module files."""
     import importlib
+    import sys
+
     importlib.reload(sys.modules[__name__])
 
     for file in "base", "joint", "mesh", "transform":
-        try:
+        with contextlib.suppress(KeyError):
             importlib.reload(sys.modules[f"{__name__}.objects.{file}"])
-        except KeyError:
-            pass
 
     for file in "alignment", "core", "geometry", "main", "mapping", "raycast", "weights":
-        try:
+        with contextlib.suppress(KeyError):
             importlib.reload(sys.modules[f"{__name__}.registration.{file}"])
-        except KeyError:
-            pass
 
     for file in "ui", "util", "inpaint", "cluster", "logic", "objects", "registration", "logger":
-        try:
+        with contextlib.suppress(KeyError):
             importlib.reload(sys.modules[f"{__name__}.{file}"])
-        except KeyError:
-            pass
 
-__all__ = ["show_ui", "reload", "retarget", "logger", "set_log_level"]
+
+__all__ = ["logger", "reload", "retarget", "set_log_level", "show_ui"]

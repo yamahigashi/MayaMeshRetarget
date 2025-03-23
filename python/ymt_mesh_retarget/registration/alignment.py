@@ -1,33 +1,21 @@
-# -*- coding: utf-8 -*-
-"""
-Alignment utilities for mesh registration.
+"""Alignment utilities for mesh registration.
 
 This module provides functions for aligning meshes and joints in space.
 """
+
 import typing
-from typing import Union, Optional, Callable, List, Tuple
+from typing import Callable, Optional
 
 import numpy as np
-from numpy.typing import NDArray
 from maya import cmds
 from maya.api import OpenMaya as om
+from numpy.typing import NDArray
 
-from ..util import timeit
 from ..logic import RBF, calculate_rbf_weight_matrix, get_distance_matrix
+from ..util import timeit
+from .core import BoneNode, JointNode, Kernel
+from .utils import find_root_joints, get_matched_info, match_joint_positions, scale_joint_hierarchy_to_mesh
 
-from .core import (
-    JointNode,
-    BoneNode,
-    Vector3,
-    Kernel
-)
-
-from .utils import (
-    get_matched_info,
-    find_root_joints,
-    scale_joint_hierarchy_to_mesh,
-    match_joint_positions
-)
 
 if typing.TYPE_CHECKING:
     from ..objects import MeshObject
@@ -38,18 +26,18 @@ def calculate_alignment_transform_rbf(
     src_points: NDArray[np.float64],
     tar_points: NDArray[np.float64],
     kernel: "Kernel" = RBF.linear,
-    radius: float = 1.0
+    radius: float = 1.0,
 ) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
     """Calculate alignment transform using RBF.
-    
+
     Use RBF to calculate the alignment transform of source space to target space.
-    
+
     Args:
         src_points: Source points (M, 3)
         tar_points: Target points (M, 3)
         kernel: Radial basis function kernel
         radius: RBF radius
-        
+
     Returns:
         RBF transform function that maps points from source to target space
     """
@@ -58,67 +46,66 @@ def calculate_alignment_transform_rbf(
         source_points=src_points,
         target_points=tar_points,
         kernel=kernel,
-        radius=radius
+        radius=radius,
     )
-    
+
     def rbf_transform(query_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Transform query points from source space to target space using RBF.
-        
+        """Transform query points from source space to target space using RBF.
+
         Args:
             query_points: Points to transform, shape=(K,3)
-        
+
         Returns:
             Transformed points, shape=(K,3)
         """
         # Calculate distance matrix (K,M)
         dist_mat = get_distance_matrix(query_points, tar_points, kernel, radius)
-        
+
         # Build matrix according to RBF formula: [dist_mat, 1, query_points]
         K = query_points.shape[0]
         ones = np.ones((K, 1), dtype=np.float64)
         # dist_mat: (K,M), ones: (K,1), query_points: (K,3) => (K, M+1+3)
         h_combined = np.hstack([dist_mat, ones, query_points])
-        
+
         # weights is (M+1+3, 3) so result is (K,3)
         deformed = h_combined @ weights
         return deformed
-    
+
     return rbf_transform
 
 
 @timeit
 def calculate_alignment_transform(
-    src_joint_group: List[JointNode],
-    tar_joint_group: List[JointNode],
+    src_joint_group: list[JointNode],
+    tar_joint_group: list[JointNode],
     kernel: "Kernel" = RBF.linear,
-    radius: float = 1.0
+    radius: float = 1.0,
 ) -> Optional[NDArray[np.float64]]:
     """Calculate alignment transform between joint hierarchies.
-    
+
     This function aligns the source joint hierarchy to the target joint hierarchy.
-    
+
     Args:
         src_joint_group: Source joint group
         tar_joint_group: Target joint group
         kernel: RBF kernel
         radius: RBF radius
-        
+
     Returns:
         Transformed source points or None if matching failed
     """
     # (1) Get all joint coordinates
     src_points = np.array([joint.position for joint in src_joint_group])  # (Ns,3)
     tar_points = np.array([joint.position for joint in tar_joint_group])  # (Nt,3)
-    
+
     # (2) Find matching joints by name
     matched_src_indices, matched_tar_indices, _ = get_matched_info(src_joint_group, tar_joint_group)
-    
+
     # (3) Need at least 3 matching joints for RBF
     if len(matched_src_indices) < 3:
         print(f"Not enough matched joints to build RBF. Found {len(matched_src_indices)}, need at least 3.")
         return None
-    
+
     # (4) Create RBF transform function (source to target)
     matched_src_points = src_points[matched_src_indices]  # shape=(M,3)
     matched_tar_points = tar_points[matched_tar_indices]  # shape=(M,3)
@@ -126,25 +113,25 @@ def calculate_alignment_transform(
         matched_src_points,
         matched_tar_points,
         kernel=kernel,
-        radius=radius
+        radius=radius,
     )
-    
+
     # (5) Transform all source joints
     new_src_points = rbf_func(src_points)  # shape=(Ns,3)
-    
+
     # (6) Force matched joints to exactly match target positions
     for i, src_id in enumerate(matched_src_indices):
         new_src_points[src_id] = tar_points[matched_tar_indices[i]]
-    
+
     return new_src_points
 
 
-def get_joint_tree(joint_names: List[str]) -> Tuple[List[om.MDagPath], List[JointNode], List[BoneNode]]:
-    """Get joint tree information from joint names
-    
+def get_joint_tree(joint_names: list[str]) -> tuple[list[om.MDagPath], list[JointNode], list[BoneNode]]:
+    """Get joint tree information from joint names.
+
     Args:
         joint_names: List of joint names
-        
+
     Returns:
         Tuple containing:
         - List of joint DAG paths
@@ -157,96 +144,96 @@ def get_joint_tree(joint_names: List[str]) -> Tuple[List[om.MDagPath], List[Join
         # Check if joint exists
         if not cmds.objExists(joint_name):
             continue
-        
+
         # Get DAG path
         selection = om.MSelectionList()
         selection.add(joint_name)
         dag_path = selection.getDagPath(0)
         joint_paths.append(dag_path)
-    
+
     # Build joint tree
     joint_group = []
     bone_group = []
-    
+
     # Find root joints (joints without parents)
     root_joints = find_root_joints(joint_paths)
-    
+
     # Build tree from each root joint
     for root_path in root_joints:
         queue = [root_path]
         visited = set()
-        
+
         while queue:
             current_path = queue.pop(0)
             if current_path.fullPathName() in visited:
                 continue
-            
+
             visited.add(current_path.fullPathName())
-            
+
             # Create joint node
             name = current_path.fullPathName()
             pos = cmds.xform(current_path.fullPathName(), query=True, translation=True, worldSpace=True)
             position = np.array(pos, dtype=np.float64)
             matrix = cmds.xform(current_path.fullPathName(), query=True, matrix=True, worldSpace=True)
-            
+
             joint_node = JointNode(
                 path=current_path,
                 index=len(joint_group),
                 detail_name=name,
                 position=position,
-                matrix=matrix
+                matrix=matrix,
             )
             joint_group.append(joint_node)
-            
+
             # Get child joints
             children = cmds.listRelatives(current_path.fullPathName(), children=True, type="joint", fullPath=True) or []
-            
+
             for child in children:
                 # Skip helper joints
                 if "helper" in child:
                     continue
-                
+
                 child_sel = om.MSelectionList()
                 child_sel.add(child)
                 child_path = child_sel.getDagPath(0)
-                
+
                 # Create bone node
                 bone_node = BoneNode(
                     start_joint_index=joint_node.index,
-                    end_joint_index=len(joint_group)  # Index of child joint to be added
+                    end_joint_index=len(joint_group),  # Index of child joint to be added
                 )
                 bone_group.append(bone_node)
-                
+
                 queue.append(child_path)
-    
+
     return joint_paths, joint_group, bone_group
 
 
 def match_joint_trees(
     src_mesh: "MeshObject",
     tar_mesh: "MeshObject",
-    src_joint_group: List[JointNode],
-    tar_joint_group: List[JointNode]
-) -> List[int]:
-    """Match joint trees between target and source
+    src_joint_group: list[JointNode],
+    tar_joint_group: list[JointNode],
+) -> list[int]:
+    """Match joint trees between target and source.
 
     1. Calculate the bounding box of the source and target meshes
     2. Scale the source joint tree to match the target mesh proportions
     3. Match joint translations between source and target
-    
+
     Args:
         src_mesh: Source mesh object
         tar_mesh: Target mesh object
         src_joint_group: Source joint group
         tar_joint_group: Target joint group
-        
+
     Returns:
         List of matched source joint indices
     """
     # Scale source joint hierarchy to match target mesh proportions
     scale_joint_hierarchy_to_mesh(src_joint_group, src_mesh, tar_mesh)
-    
+
     # Match joint translations between source and target
     src_indices = match_joint_positions(src_joint_group, tar_joint_group)
-    
+
     return src_indices

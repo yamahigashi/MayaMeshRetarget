@@ -1,43 +1,24 @@
-# -*- coding: utf-8 -*-
-"""
-Mapping utility functions for mesh registration.
+"""Mapping utility functions for mesh registration.
 
 This module provides functions for creating and managing mapping points between meshes.
 """
+
 import typing
-from typing import List, Optional, Union, Tuple, Dict, Any
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ..util import (
-    timeit,
-    get_short_name
-)
+from ..util import get_short_name, timeit
+from .core import CorrespondencePoint, MappingNode, MappingResult, Vector3
 
-from .core import (
-    CorrespondencePoint,
-    MappingNode,
-    MappingResult,
-    Vector3,
-    VertexIndex,
-    BoneIndex
-)
-
-from .utils import (
-    get_matched_info
-)
 
 if typing.TYPE_CHECKING:
-    from .core import (
-        JointNode,
-        BoneNode,
-        RaycastResult
-    )
+    from .core import BoneNode, JointNode, RaycastResult
 
 
 def find_nearest_vertex_index(position: Vector3, triangle_idx: int, raycast_data: Any) -> int:
-    """Find the nearest vertex index to the given position
+    """Find the nearest vertex index to the given position.
 
     This function determines the closest vertex to a point (e.g., ray intersection point)
     using triangle information.
@@ -52,7 +33,7 @@ def find_nearest_vertex_index(position: Vector3, triangle_idx: int, raycast_data
     """
     # This is a placeholder implementation that should be improved
     # In a real implementation, we would use mesh topology information
-    
+
     # For now, return -1 to indicate not implemented
     return -1
 
@@ -60,13 +41,13 @@ def find_nearest_vertex_index(position: Vector3, triangle_idx: int, raycast_data
 @timeit
 def get_mapping_points(
     target_points: NDArray[np.float64],
-    target_joint_group: List["JointNode"],
-    target_bone_group: List["BoneNode"],
-    target_weights: List[List[float]],
-    target_joint_names: List[str],
-    max_distance: float = 0.0
-) -> List[MappingResult]:
-    """Get mapping points for target mesh vertices
+    target_joint_group: list["JointNode"],
+    target_bone_group: list["BoneNode"],
+    target_weights: list[list[float]],
+    target_joint_names: list[str],
+    max_distance: float = 0.0,
+) -> list[MappingResult]:
+    """Get mapping points for target mesh vertices.
 
     Generate mapping points for each target mesh vertex based on skeleton information.
     These mapping points are used to establish correspondences between meshes.
@@ -145,7 +126,7 @@ def get_mapping_points(
                     point=p,
                     bone_index=bone_idx,
                     distance=distance,
-                    weight=target_weights[vert_idx][weight_index]
+                    weight=target_weights[vert_idx][weight_index],
                 )
                 mapping_result.add_node(mapping_node)
 
@@ -159,7 +140,7 @@ def get_mapping_points(
                         point=start_point,
                         bone_index=bone_idx,
                         distance=start_distance,
-                        weight=target_weights[vert_idx][weight_index]
+                        weight=target_weights[vert_idx][weight_index],
                     )
                     mapping_result.add_node(mapping_node)
 
@@ -168,7 +149,7 @@ def get_mapping_points(
                         point=end_point,
                         bone_index=bone_idx,
                         distance=end_distance,
-                        weight=target_weights[vert_idx][weight_index]
+                        weight=target_weights[vert_idx][weight_index],
                     )
                     mapping_result.add_node(mapping_node)
 
@@ -178,15 +159,15 @@ def get_mapping_points(
 
 
 def create_optimized_correspondence_points(
-    raycast_result_array: List[List["RaycastResult"]],
-    tar_mapping_points: List[MappingResult],
+    raycast_result_array: list[list["RaycastResult"]],
+    tar_mapping_points: list[MappingResult],
     target_points: NDArray[np.float64],
     max_points_per_target: int = 1,
     min_weight_threshold: float = 0.01,
     distance_weight: float = 1.0,
-    ray_weight: float = 0.5
-) -> List[CorrespondencePoint]:
-    """Create optimized correspondence points from raycast results
+    ray_weight: float = 0.5,
+) -> list[CorrespondencePoint]:
+    """Create optimized correspondence points from raycast results.
 
     Keep only the most significant correspondence points for each target vertex
     to reduce the total number and improve quality.
@@ -204,7 +185,7 @@ def create_optimized_correspondence_points(
         Optimized list of correspondence points
     """
     # Dictionary to store correspondence points (key: target vertex index)
-    correspondence_dict: Dict[int, List[Dict[str, Any]]] = {}
+    correspondence_dict: dict[int, list[dict[str, Any]]] = {}
 
     # Process raycast results
     for i, raycast_results in enumerate(raycast_result_array):
@@ -238,8 +219,8 @@ def create_optimized_correspondence_points(
 
             # Calculate total score considering distance, ray quality, and node weight
             total_score = (
-                distance_weight * basic_weight +  # Distance-based score
-                ray_weight * ray_quality * node_weight  # Ray quality and node weight
+                distance_weight * basic_weight  # Distance-based score
+                + ray_weight * ray_quality * node_weight  # Ray quality and node weight
             ) / (distance_weight + ray_weight)  # Normalize
 
             # Add to candidates if score exceeds threshold
@@ -247,13 +228,15 @@ def create_optimized_correspondence_points(
                 # Find nearest source vertex to the intersection point
                 source_vertex_index = find_nearest_vertex_index(src_pos, triangle_idx, raycast)
 
-                candidates.append({
-                    "source_index": source_vertex_index,
-                    "target_index": target_idx,
-                    "weight": basic_weight,  # Keep original weight calculation
-                    "score": total_score,    # Total score for sorting
-                    "triangle_index": triangle_idx
-                })
+                candidates.append(
+                    {
+                        "source_index": source_vertex_index,
+                        "target_index": target_idx,
+                        "weight": basic_weight,  # Keep original weight calculation
+                        "score": total_score,  # Total score for sorting
+                        "triangle_index": triangle_idx,
+                    },
+                )
 
         # Sort candidates by score (descending)
         candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -281,7 +264,7 @@ def create_optimized_correspondence_points(
             correspondence_point = CorrespondencePoint(
                 source_index=source_idx,
                 target_index=candidate["target_index"],
-                weight=candidate["weight"]
+                weight=candidate["weight"],
             )
             optimized_correspondence_points.append(correspondence_point)
 
@@ -291,14 +274,14 @@ def create_optimized_correspondence_points(
 def find_correspondence_using_skeleton(
     source_points: NDArray[np.float64],
     target_points: NDArray[np.float64],
-    source_weights: List[List[float]],
-    target_weights: List[List[float]],
-    source_joints: List[str],
-    target_joints: List[str],
+    source_weights: list[list[float]],
+    target_weights: list[list[float]],
+    source_joints: list[str],
+    target_joints: list[str],
     sample_rate: float = 1.0,
-    weight_decay: float = 2.0
-) -> List[CorrespondencePoint]:
-    """Find correspondence points using skeleton information
+    weight_decay: float = 2.0,
+) -> list[CorrespondencePoint]:
+    """Find correspondence points using skeleton information.
 
     This is a fallback method for finding correspondence points when
     advanced methods fail. It uses joint weights to establish correspondences.
@@ -375,10 +358,12 @@ def find_correspondence_using_skeleton(
         # Add to correspondence points if a match was found
         if best_match:
             src_idx, _ = best_match
-            correspondence_points.append(CorrespondencePoint(
-                source_index=src_idx,
-                target_index=idx,
-                weight=1.0 / (1.0 + min_distance)  # Weight based on distance
-            ))
+            correspondence_points.append(
+                CorrespondencePoint(
+                    source_index=src_idx,
+                    target_index=idx,
+                    weight=1.0 / (1.0 + min_distance),  # Weight based on distance
+                ),
+            )
 
     return correspondence_points

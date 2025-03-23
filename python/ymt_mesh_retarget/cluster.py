@@ -1,21 +1,19 @@
-# -*- coding: utf-8 -*-
-"""
-Module for clustering vertices based on skin weights and topological adjacency.
-"""
+"""Module for clustering vertices based on skin weights and topological adjacency."""
+
 import collections
 
-import numpy as np
-from scipy.spatial import cKDTree
 from scipy.sparse import (
     lil_matrix,
 )
+from scipy.spatial import cKDTree
 
-from maya.api import (
-    OpenMaya as om,
-)
+import numpy as np
 from maya import (
     cmds,
     mel,
+)
+from maya.api import (
+    OpenMaya as om,
 )
 
 from . import util
@@ -27,15 +25,13 @@ from . import util
 @util.timeit
 def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cluster=6):
     # type: (list[om.MDagPath|str], float, int) -> np.ndarray
-    """
-    Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
+    """Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
 
     :param mesh_paths: A list of meshes to cluster
     :param precision: The number of decimal places to round the skin weights (default: 3)
     :param min_vertices_per_cluster: The minimum number of vertices required for a cluster (default: 6)
     :return: A list of cluster labels for each vertex across all meshes
     """
-
     # Initialize variables to hold combined data
     all_sparse_weights = []
     vertex_offsets = []
@@ -43,7 +39,6 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
 
     # Process each mesh and collect sparse weights
     for mesh_path in mesh_paths:
-
         try:
             sparse_weights = util.get_skin_weight_as_sparse_matrix(mesh_path)
         except ValueError:
@@ -65,7 +60,9 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
     current_vertex = 0
     for sparse_weights in all_sparse_weights:
         num_vertices = sparse_weights.shape[0]
-        combined_sparse_weights[current_vertex:current_vertex + num_vertices, :sparse_weights.shape[1]] = sparse_weights
+        combined_sparse_weights[current_vertex : current_vertex + num_vertices, : sparse_weights.shape[1]] = (
+            sparse_weights
+        )
         current_vertex += num_vertices
 
     # Convert to CSR format for efficient row operations
@@ -123,8 +120,7 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
 @util.timeit
 def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
     # type: (list[om.MDagPath|str], np.ndarray, float) -> np.ndarray
-    """
-    Refine clusters by checking topological adjacency across multiple meshes.
+    """Refine clusters by checking topological adjacency across multiple meshes.
 
     :param mesh_paths: A list of meshes for which to refine the clusters
     :param labels: Initial cluster labels based on weight similarity
@@ -157,7 +153,9 @@ def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
             vertex_iter.next()
 
         if not cmds.about(batch=True):
-            cmds.progressBar(bar, edit=True, step=num_vertices, status=f"Collecting to connectivities for {mesh_path}...")
+            cmds.progressBar(
+                bar, edit=True, step=num_vertices, status=f"Collecting to connectivities for {mesh_path}...",
+            )
 
         vertex_offset += num_vertices
 
@@ -234,13 +232,11 @@ def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
 @util.timeit
 def cluster_vertices(mesh_paths):
     # type: (list[om.MDagPath|str]) -> np.ndarray
-    """
-    Cluster vertices across multiple meshes.
+    """Cluster vertices across multiple meshes.
 
     :param mesh_paths: A list of meshes to cluster
     :return: A list of cluster labels for each vertex across all meshes
     """
-
     vertex_offset = 0
 
     for mesh_path in mesh_paths:
@@ -251,11 +247,11 @@ def cluster_vertices(mesh_paths):
     bar = mel.eval("$tmp = $gMainProgressBar")
     if not cmds.about(batch=True):
         cmds.progressBar(
-                bar,
-                edit=True,
-                beginProgress=True,
-                status="Clustering vertices...",
-                maxValue=vertex_offset * 4,
+            bar,
+            edit=True,
+            beginProgress=True,
+            status="Clustering vertices...",
+            maxValue=vertex_offset * 4,
         )
 
     labels = cluster_vertices_by_skin_weight(mesh_paths)

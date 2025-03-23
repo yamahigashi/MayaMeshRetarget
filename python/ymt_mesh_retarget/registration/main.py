@@ -1,6 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Main mesh registration functionality.
+"""Main mesh registration functionality.
 
 This module provides the MeshRegistration class that coordinates the process
 of finding correspondence points between meshes.
@@ -310,7 +308,6 @@ class MeshRegistration:
             src_bone_group=self.source_bone_group,
             tar_bone_group=self.target_bone_group,
             options=self.options,
-            num_threads=self.options.num_threads
         )
         logger.info(f"Raycast results: {len(raycast_result_array)}")
 
@@ -627,7 +624,7 @@ def find_correspondence_pairs(
         source_mesh: Union[str, MeshObject],
         target_mesh: Union[str, MeshObject],
         sample_rate: float = 0.5,
-        sample_number: int = 32, 
+        sample_number: int = 16, 
         sample_degree: float = 45.0,
         weight_decay: float = 2.0,
         align_spaces: bool = True,

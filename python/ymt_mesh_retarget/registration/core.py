@@ -68,10 +68,10 @@ class CorrespondencePoint:
 
     def __post_init__(self) -> None:
         """Validate data after initialization"""
-        if not isinstance(self.source_index, int) or self.source_index < 0:
-            raise ValueError(f"Invalid source_index: {self.source_index}. Must be a non-negative integer.")
-        if not isinstance(self.target_index, int) or self.target_index < 0:
-            raise ValueError(f"Invalid target_index: {self.target_index}. Must be a non-negative integer.")
+        # if not isinstance(self.source_index, int) or self.source_index < 0:
+        #     raise ValueError(f"Invalid source_index: {self.source_index}. Must be a non-negative integer.")
+        # if not isinstance(self.target_index, int) or self.target_index < 0:
+        #     raise ValueError(f"Invalid target_index: {self.target_index}. Must be a non-negative integer.")
         if not 0.0 <= self.weight <= 1.0:
             # Clamp weight to valid range
             self.weight = max(0.0, min(1.0, self.weight))

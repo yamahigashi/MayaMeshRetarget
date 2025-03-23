@@ -56,6 +56,109 @@ def timeit(func):
     return wrapper
 
 
+def viewport_off(func):
+    # type: (Callable[..., RT]) -> Callable[..., RT]
+    """Decorator - Turn off Maya display while func is running.
+
+    if func will fail, the error will be raised after.
+
+    type: (function) -> function
+
+    """
+    @functools.wraps(func)
+    def wrap(*args, **kwargs):
+        # type: (list[Any], Dict[Any, RT]) -> RT
+
+        # Turn $gMainPane Off:
+        from maya import mel
+        from maya import cmds
+
+        # paneLayout -manage
+        gMainPane = mel.eval('global string $gMainPane; $temp = $gMainPane;')  # type: ignore
+        cmds.paneLayout(gMainPane, edit=True, manage=False)
+
+        # ogs
+        ogs_paused = cmds.ogs(q=True, pause=True)  # type: ignore
+        if not ogs_paused:
+            cmds.ogs(pause=True)
+
+        # refresh
+        cmds.refresh(suspend=True)
+
+        try:
+            return func(*args, **kwargs)
+
+        except Exception:
+            import traceback
+            traceback.print_stack()
+            traceback.print_exc()
+            raise
+
+        finally:
+            cmds.paneLayout(gMainPane, edit=True, manage=True)
+            if not ogs_paused:
+                cmds.ogs(pause=True)
+            cmds.refresh(suspend=False)
+
+    return wrap
+
+
+def one_undo(func):
+    """ Puts the wrapped `func` into a single Maya Undo action, then 
+        undoes it when the function enters the finally: block """
+
+    @functools.wraps(func)
+    def _undofunc(*args, **kwargs):
+        import maya.cmds as cmds
+        try:
+            # start an undo chunk
+            cmds.undoInfo(ock=True)
+            return func(*args, **kwargs)
+        finally:
+            # after calling the func, end the undo chunk and undo
+            cmds.undoInfo(cck=True)
+            # cmds.undo()
+
+    return _undofunc
+
+
+def autokey_off(func):
+    # type: (Callable[..., RT]) -> Callable[..., RT]
+    """Decorator - Turn off AutoKey while func is running.
+
+    if func will fail, the error will be raised after.
+
+    type: (function) -> function
+
+    """
+    @functools.wraps(func)
+    def wrap(*args, **kwargs):
+        # type: (List[Any], Dict[Any, Any]) -> RT
+
+        # Turn $gMainPane Off:
+        import maya.mel as mel  # pylint: disable=unused-import  # noqa
+        import maya.cmds as cmds
+
+        current = cmds.autoKeyframe(q=True, state=True)
+        if not isinstance(current, bool):
+            raise Exception("could not get current frame by cmds.autoKeyframe")
+
+        try:
+            cmds.autoKeyframe(state=False)
+            return func(*args, **kwargs)
+
+        except Exception:
+            import traceback
+            traceback.print_stack()
+            traceback.print_exc()
+            raise
+
+        finally:
+            cmds.autoKeyframe(state=current)
+
+    return wrap
+
+
 ##############################################################################
 # utility functions for OpenMaya
 ##############################################################################
@@ -296,109 +399,6 @@ def restructure_meshes_hierarchy(suffix="retarget", targets=None):
 
         if parent:
             mesh = cmds.parent(mesh, parent)[0]
-
-
-def viewport_off(func):
-    # type: (Callable[..., RT]) -> Callable[..., RT]
-    """Decorator - Turn off Maya display while func is running.
-
-    if func will fail, the error will be raised after.
-
-    type: (function) -> function
-
-    """
-    @functools.wraps(func)
-    def wrap(*args, **kwargs):
-        # type: (list[Any], Dict[Any, RT]) -> RT
-
-        # Turn $gMainPane Off:
-        from maya import mel
-        from maya import cmds
-
-        # paneLayout -manage
-        gMainPane = mel.eval('global string $gMainPane; $temp = $gMainPane;')  # type: ignore
-        cmds.paneLayout(gMainPane, edit=True, manage=False)
-
-        # ogs
-        ogs_paused = cmds.ogs(q=True, pause=True)  # type: ignore
-        if not ogs_paused:
-            cmds.ogs(pause=True)
-
-        # refresh
-        cmds.refresh(suspend=True)
-
-        try:
-            return func(*args, **kwargs)
-
-        except Exception:
-            import traceback
-            traceback.print_stack()
-            traceback.print_exc()
-            raise
-
-        finally:
-            cmds.paneLayout(gMainPane, edit=True, manage=True)
-            if not ogs_paused:
-                cmds.ogs(pause=True)
-            cmds.refresh(suspend=False)
-
-    return wrap
-
-
-def one_undo(func):
-    """ Puts the wrapped `func` into a single Maya Undo action, then 
-        undoes it when the function enters the finally: block """
-
-    @functools.wraps(func)
-    def _undofunc(*args, **kwargs):
-        import maya.cmds as cmds
-        try:
-            # start an undo chunk
-            cmds.undoInfo(ock=True)
-            return func(*args, **kwargs)
-        finally:
-            # after calling the func, end the undo chunk and undo
-            cmds.undoInfo(cck=True)
-            # cmds.undo()
-
-    return _undofunc
-
-
-def autokey_off(func):
-    # type: (Callable[..., RT]) -> Callable[..., RT]
-    """Decorator - Turn off AutoKey while func is running.
-
-    if func will fail, the error will be raised after.
-
-    type: (function) -> function
-
-    """
-    @functools.wraps(func)
-    def wrap(*args, **kwargs):
-        # type: (List[Any], Dict[Any, Any]) -> RT
-
-        # Turn $gMainPane Off:
-        import maya.mel as mel  # pylint: disable=unused-import  # noqa
-        import maya.cmds as cmds
-
-        current = cmds.autoKeyframe(q=True, state=True)
-        if not isinstance(current, bool):
-            raise Exception("could not get current frame by cmds.autoKeyframe")
-
-        try:
-            cmds.autoKeyframe(state=False)
-            return func(*args, **kwargs)
-
-        except Exception:
-            import traceback
-            traceback.print_stack()
-            traceback.print_exc()
-            raise
-
-        finally:
-            cmds.autoKeyframe(state=current)
-
-    return wrap
 
 
 def get_short_name(name: str) -> str:

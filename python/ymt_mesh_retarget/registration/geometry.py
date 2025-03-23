@@ -8,7 +8,7 @@ random vector generation within cones, and barycentric coordinates calculation.
 
 import math
 import random
-from typing import Tuple, List, Optional, Union
+from typing import Tuple, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 from .core import Vector3
 
 
-def rand_cone_vector(direction: Vector3, angle_degree: float, num_samples: int) -> NDArray[np.float32]:
+def rand_cone_vector(direction: Vector3, angle_degree: float, num_samples: int, seed: Optional[int] = None) -> NDArray[np.float32]:
     """Generate random vectors within a cone around a direction vector
     
     Python implementation of the rand_cone_vector function from C++ version
@@ -47,8 +47,7 @@ def rand_cone_vector(direction: Vector3, angle_degree: float, num_samples: int) 
         print(f"type of num_samples: {type(num_samples)}")
         raise
 
-    # Set random seed
-    random.seed()
+    random.seed(seed)
 
     for i in range(num_samples):
         # Generate random z coordinate (cone height direction)

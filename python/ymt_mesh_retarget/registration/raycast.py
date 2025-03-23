@@ -7,6 +7,7 @@ This module provides functions for raycasting operations using Embree or fallbac
 import typing
 from typing import List, Tuple, Dict, Any, Optional, Union, Callable
 import math
+import logging
 
 import numpy as np
 from numpy.typing import NDArray
@@ -20,7 +21,7 @@ try:
     EMBREE_AVAILABLE = True
 except ImportError:
     EMBREE_AVAILABLE = False
-    logger.warning("embreex library not found. Using standard raycasting instead.")
+    cmds.warning("embreex library not found. Using standard raycasting instead.")
 
 from . import geometry
 from .core import (
@@ -43,8 +44,9 @@ if typing.TYPE_CHECKING:
         BoneNode,
     )
 
-# Use centralized logger
-from ..logger import logger
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class RaycastEngine:
@@ -203,10 +205,9 @@ class EmbreeRaycastEngine(RaycastEngine):
 
 
 class StandardRaycastEngine(RaycastEngine):
-    """Standard raycast engine using NumPy with BVH acceleration
+    """Standard raycast engine using NumPy
     
-    This class provides a fallback for when Embree is not available, using a
-    Bounding Volume Hierarchy (BVH) for accelerated ray-triangle intersection tests.
+    This class provides a fallback for when Embree is not available.
     """
     
     def __init__(self, triangles: NDArray[np.float32], triangle_indices: NDArray[np.int32]):
@@ -219,25 +220,24 @@ class StandardRaycastEngine(RaycastEngine):
         super().__init__(triangles, triangle_indices)
     
     def _prepare_scene(self) -> None:
-        """Prepare data for raycasting using a BVH
+        """Prepare data for raycasting
         
-        Creates a BVH acceleration structure for efficient ray-triangle testing.
+        Creates a flat array of triangles for efficient access.
         """
-        from .spatial import BVH
+        # Convert triangles to a flat array for efficient access
+        self.triangle_vertices = np.zeros((self.num_triangles, 3, 3), dtype=np.float32)
         
-        # Initialize BVH
-        self.bvh = BVH(
-            self.triangles,
-            self.triangle_indices,
-            max_triangles_per_leaf=8,
-            max_depth=20
-        )
-        
-        # Also store the triangle vertices for direct access if needed
-        self.triangle_vertices = self.bvh.triangle_vertices
+        for i in range(self.num_triangles):
+            v0_idx = self.triangle_indices[i * 3 + 0]
+            v1_idx = self.triangle_indices[i * 3 + 1]
+            v2_idx = self.triangle_indices[i * 3 + 2]
+            
+            self.triangle_vertices[i, 0] = self.triangles[v0_idx]
+            self.triangle_vertices[i, 1] = self.triangles[v1_idx]
+            self.triangle_vertices[i, 2] = self.triangles[v2_idx]
     
     def cast_ray(self, origin: Vector3, direction: Vector3) -> Optional[Dict[str, Any]]:
-        """Cast a ray through the scene using BVH acceleration
+        """Cast a ray through the scene using standard ray-triangle intersection
         
         Args:
             origin: Ray origin point
@@ -246,14 +246,49 @@ class StandardRaycastEngine(RaycastEngine):
         Returns:
             Dict containing hit information or None if no hit
         """
-        # Use BVH for accelerated intersection testing
-        return self.bvh.ray_intersection(origin, direction)
+        closest_hit = None
+        closest_t = float('inf')
+        closest_prim_id = -1
+        closest_u = 0.0
+        closest_v = 0.0
+        
+        # Normalize direction
+        direction_norm = np.linalg.norm(direction)
+        if direction_norm < 1e-10:
+            return None
+        direction = direction / direction_norm
+        
+        # Check each triangle
+        for i in range(self.num_triangles):
+            v0 = self.triangle_vertices[i, 0]
+            v1 = self.triangle_vertices[i, 1]
+            v2 = self.triangle_vertices[i, 2]
+            
+            # Ray-triangle intersection using Möller–Trumbore algorithm
+            hit, intersection, t, u, v = geometry.ray_triangle_intersection_with_uv(origin, direction, v0, v1, v2)
+            
+            if hit and t < closest_t:
+                closest_hit = intersection
+                closest_t = t
+                closest_prim_id = i
+                closest_u = u
+                closest_v = v
+        
+        if closest_hit is not None:
+            return {
+                "primID": closest_prim_id,
+                "tfar": closest_t,
+                "u": closest_u,
+                "v": closest_v
+            }
+        
+        return None
     
     def cast_rays(self, 
                   origins: NDArray[np.float32], 
                   directions: NDArray[np.float32]
                  ) -> Dict[str, NDArray]:
-        """Cast multiple rays through the scene using BVH acceleration
+        """Cast multiple rays through the scene
         
         Args:
             origins: Ray origin points (N, 3)
@@ -262,17 +297,59 @@ class StandardRaycastEngine(RaycastEngine):
         Returns:
             Dict containing hit information for all rays
         """
-        # Use BVH for accelerated batch intersection testing
-        return self.bvh.ray_intersections_batch(origins, directions)
-    
-    def cleanup(self) -> None:
-        """Clean up resources
+        # Initialize result arrays
+        num_rays = origins.shape[0]
+        primID = np.full(num_rays, -1, dtype=np.int32)
+        geomID = np.full(num_rays, -1, dtype=np.int32)
+        tfar = np.full(num_rays, np.inf, dtype=np.float32)
+        u = np.zeros(num_rays, dtype=np.float32)
+        v = np.zeros(num_rays, dtype=np.float32)
         
-        Explicitly release BVH and triangle data to help garbage collection.
-        """
-        self.bvh = None
-        self.triangle_vertices = None
-        super().cleanup()
+        # Process each ray
+        for ray_idx in range(num_rays):
+            origin = origins[ray_idx]
+            direction = directions[ray_idx]
+            
+            # Normalize direction
+            direction_norm = np.linalg.norm(direction)
+            if direction_norm < 1e-10:
+                continue
+            direction = direction / direction_norm
+            
+            closest_t = float('inf')
+            closest_prim_id = -1
+            closest_u = 0.0
+            closest_v = 0.0
+            
+            # Check each triangle
+            for i in range(self.num_triangles):
+                v0 = self.triangle_vertices[i, 0]
+                v1 = self.triangle_vertices[i, 1]
+                v2 = self.triangle_vertices[i, 2]
+                
+                # Ray-triangle intersection
+                hit, _, t, u_val, v_val = geometry.ray_triangle_intersection_with_uv(origin, direction, v0, v1, v2)
+                
+                if hit and t < closest_t:
+                    closest_t = t
+                    closest_prim_id = i
+                    closest_u = u_val
+                    closest_v = v_val
+            
+            if closest_prim_id >= 0:
+                primID[ray_idx] = closest_prim_id
+                geomID[ray_idx] = 0  # We only have one geometry
+                tfar[ray_idx] = closest_t
+                u[ray_idx] = closest_u
+                v[ray_idx] = closest_v
+        
+        return {
+            "primID": primID,
+            "geomID": geomID,
+            "tfar": tfar,
+            "u": u,
+            "v": v
+        }
 
 
 def get_raycast_engine(triangles: NDArray[np.float32], 
@@ -330,8 +407,7 @@ def perform_raycast(
         tar_bone_group: List["BoneNode"],
         batch_size: int = 1024,
         max_triangles: int = -1,
-        force_standard_raycast: bool = False,
-        num_threads: int = 4
+        force_standard_raycast: bool = False
 ) -> List[List[RaycastResult]]:
     """
     Perform raycasting to find correspondence points between meshes.
@@ -354,14 +430,10 @@ def perform_raycast(
         batch_size: Batch size for processing rays
         max_triangles: Maximum number of triangles to process (-1 for all)
         force_standard_raycast: Force using standard raycasting instead of Embree
-        num_threads: Number of threads to use for parallel processing
         
     Returns:
         List of raycast results for each target vertex
     """
-    import concurrent.futures
-    from functools import partial
-    
     # Validate inputs
     if not EMBREE_AVAILABLE and not force_standard_raycast:
         logger.warning("Embree library is not available. Using standard raycasting.")
@@ -407,6 +479,16 @@ def perform_raycast(
     # Initialize result array
     raycast_result_array = [[] for _ in range(len(tar_mapping_points))]
     
+    # Initialize ray buffers
+    ray_origins = np.zeros((batch_size, 3), dtype=np.float32)
+    ray_directions = np.zeros((batch_size, 3), dtype=np.float32)
+    ray_data = np.zeros(batch_size, dtype=[
+        ("vertex_idx", np.int32),
+        ("from_point", np.float32, (3,)),
+        ("node_weight", np.float32),
+        ("target_distance", np.float32)
+    ])
+    
     if not cmds.about(batch=True):
         cmds.progressBar(bar, edit=True, step=50)
         cmds.progressBar(bar, edit=True, endProgress=True)
@@ -419,213 +501,144 @@ def perform_raycast(
             status="Calculating correspondence points...",
             maxValue=len(tar_mapping_points)
         )
+
+    seed = hash(src_mesh.name + tar_mesh.name)
     
-    # Pre-compute bone mapping
-    bone_mapping = {}
-    for i, bone in enumerate(tar_bone_group):
-        tar_start_idx = bone.start_joint_index
-        tar_end_idx = bone.end_joint_index
+    # Process each target vertex
+    for current_vert, mapping_result in enumerate(tar_mapping_points):
+        if not cmds.about(batch=True):
+            cmds.progressBar(bar, edit=True, step=1)
         
-        if tar_start_idx < 0 or tar_end_idx < 0:
+        # Skip if no mapping points
+        if not mapping_result.node_array:
             continue
-            
-        src_start_idx = src_indices[tar_start_idx] if tar_start_idx < len(src_indices) else -1
-        src_end_idx = src_indices[tar_end_idx] if tar_end_idx < len(src_indices) else -1
         
-        if src_start_idx < 0 or src_end_idx < 0:
-            continue
-            
-        bone_mapping[i] = {
-            'tar_start_idx': tar_start_idx,
-            'tar_end_idx': tar_end_idx,
-            'src_start_idx': src_start_idx,
-            'src_end_idx': src_end_idx
-        }
-    
-    # Prepare target mesh points for faster access
-    target_points = tar_mesh.get_points()
-    
-    # Define worker function for parallel processing
-    def process_vertex_chunk(vertex_indices, engine, target_points):
-        results = [[] for _ in range(len(tar_mapping_points))]
+        target_vertex_idx = mapping_result.vertex_index
+        target_vertex_pos = tar_mesh.get_points()[target_vertex_idx]
         
-        for current_vert in vertex_indices:
-            mapping_result = tar_mapping_points[current_vert]
+        # Process each mapping point
+        for current_node in mapping_result.node_array:
+            # Get current bone index and weight
+            current_tar_bone_index = current_node.bone_index
+            current_node_weight = current_node.weight
             
-            # Skip if no mapping points
-            if not mapping_result.node_array:
+            # Skip if weight is very small
+            if current_node_weight < 0.001:
                 continue
             
-            target_vertex_idx = mapping_result.vertex_index
-            target_vertex_pos = target_points[target_vertex_idx]
+            # Get vector from mapping point to vertex
+            current_tar_p = current_node.point
+            current_tar_pv = target_vertex_pos - current_tar_p
             
-            # Process each mapping point
-            for current_node in mapping_result.node_array:
-                # Get current bone index and weight
-                current_tar_bone_index = current_node.bone_index
-                current_node_weight = current_node.weight
+            # Normalize direction vector
+            current_tar_pv_norm = np.linalg.norm(current_tar_pv)
+            if current_tar_pv_norm < 1e-10:
+                continue
+            current_tar_normal_pv = current_tar_pv / current_tar_pv_norm
+            
+            # Get target bone information
+            tar_start_joint_index = tar_bone_group[current_tar_bone_index].start_joint_index
+            tar_end_joint_index = tar_bone_group[current_tar_bone_index].end_joint_index
+            
+            current_tar_bone_start_point = tar_joint_group[tar_start_joint_index].position
+            current_tar_bone_end_point = tar_joint_group[tar_end_joint_index].position
+            current_tar_bone_v = current_tar_bone_end_point - current_tar_bone_start_point
+            
+            # Calculate distance ratio along bone
+            current_tar_bone_v_norm = np.linalg.norm(current_tar_bone_v)
+            if current_tar_bone_v_norm < 1e-10:
+                continue
+            tar_distance = np.linalg.norm(current_tar_p - current_tar_bone_start_point) / current_tar_bone_v_norm
+            
+            # Get source bone information
+            src_start_joint_index = src_indices[tar_start_joint_index]
+            src_end_joint_index = src_indices[tar_end_joint_index]
+            
+            if src_start_joint_index == -1 or src_end_joint_index == -1:
+                continue
+            
+            current_src_bone_start_point = src_joint_group[src_start_joint_index].position
+            current_src_bone_end_point = src_joint_group[src_end_joint_index].position
+            current_src_bone_v = current_src_bone_end_point - current_src_bone_start_point
+            
+            # Calculate corresponding point on source bone
+            p = current_src_bone_start_point + current_src_bone_v * tar_distance
+            p = np.array(p).squeeze()
+            
+            # Get direction vector
+            d = np.array(current_tar_normal_pv).squeeze()
+            
+            # Generate sample directions
+            sample_directions = geometry.rand_cone_vector(d, sample_degree, sample_number, seed)
+            
+            # Cast rays in batches
+            n_rays = len(sample_directions)
+            n_batches = (n_rays + batch_size - 1) // batch_size
+            
+            for batch_idx in range(n_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min(start_idx + batch_size, n_rays)
+                current_batch_size = end_idx - start_idx
                 
-                # Skip if weight is very small
-                if current_node_weight < 0.001:
-                    continue
+                # Prepare batch data
+                ray_origins[:current_batch_size] = p
+                ray_directions[:current_batch_size] = sample_directions[start_idx:end_idx]
+                ray_data["vertex_idx"][:current_batch_size] = current_vert
+                ray_data["from_point"][:current_batch_size] = p
+                ray_data["node_weight"][:current_batch_size] = current_node_weight
+                ray_data["target_distance"][:current_batch_size] = current_tar_pv_norm
                 
-                # Skip if bone mapping not found
-                if current_tar_bone_index not in bone_mapping:
-                    continue
+                # Cast rays
+                res = engine.cast_rays(ray_origins[:current_batch_size], ray_directions[:current_batch_size])
+                
+                # Process hits
+                hit_mask = res["geomID"] >= 0
+                if np.any(hit_mask):
+                    # Get hit data
+                    hit_indices = np.where(hit_mask)[0]
+                    primIDs = res["primID"][hit_mask]
+                    ts = res["tfar"][hit_mask]
+                    us = res["u"][hit_mask]
+                    vs = res["v"][hit_mask]
                     
-                # Get bone mapping
-                bone_map = bone_mapping[current_tar_bone_index]
-                
-                # Get vector from mapping point to vertex
-                current_tar_p = current_node.point
-                current_tar_pv = target_vertex_pos - current_tar_p
-                
-                # Normalize direction vector
-                current_tar_pv_norm = np.linalg.norm(current_tar_pv)
-                if current_tar_pv_norm < 1e-10:
-                    continue
-                current_tar_normal_pv = current_tar_pv / current_tar_pv_norm
-                
-                # Get target bone information
-                tar_start_joint_index = bone_map['tar_start_idx']
-                tar_end_joint_index = bone_map['tar_end_idx']
-                
-                current_tar_bone_start_point = tar_joint_group[tar_start_joint_index].position
-                current_tar_bone_end_point = tar_joint_group[tar_end_joint_index].position
-                current_tar_bone_v = current_tar_bone_end_point - current_tar_bone_start_point
-                
-                # Calculate distance ratio along bone
-                current_tar_bone_v_norm = np.linalg.norm(current_tar_bone_v)
-                if current_tar_bone_v_norm < 1e-10:
-                    continue
-                tar_distance = np.linalg.norm(current_tar_p - current_tar_bone_start_point) / current_tar_bone_v_norm
-                
-                # Get source bone information
-                src_start_joint_index = bone_map['src_start_idx']
-                src_end_joint_index = bone_map['src_end_idx']
-                
-                if src_start_joint_index == -1 or src_end_joint_index == -1:
-                    continue
-                
-                current_src_bone_start_point = src_joint_group[src_start_joint_index].position
-                current_src_bone_end_point = src_joint_group[src_end_joint_index].position
-                current_src_bone_v = current_src_bone_end_point - current_src_bone_start_point
-                
-                # Calculate corresponding point on source bone
-                p = current_src_bone_start_point + current_src_bone_v * tar_distance
-                p = np.array(p).squeeze()
-                
-                # Get direction vector
-                d = np.array(current_tar_normal_pv).squeeze()
-                
-                # Generate sample directions
-                sample_directions = geometry.rand_cone_vector(d, sample_degree, sample_number)
-                
-                # Cast rays in batches
-                n_rays = len(sample_directions)
-                
-                # Prepare ray arrays
-                ray_origins = np.full((n_rays, 3), p, dtype=np.float32)
-                ray_data = np.zeros(n_rays, dtype=[
-                    ("vertex_idx", np.int32),
-                    ("from_point", np.float32, (3,)),
-                    ("node_weight", np.float32),
-                    ("target_distance", np.float32)
-                ])
-                
-                # Fill ray data
-                ray_data["vertex_idx"][:] = current_vert
-                ray_data["from_point"][:] = p
-                ray_data["node_weight"][:] = current_node_weight
-                ray_data["target_distance"][:] = current_tar_pv_norm
-                
-                # Process rays in batches
-                for batch_start in range(0, n_rays, batch_size):
-                    batch_end = min(batch_start + batch_size, n_rays)
-                    batch_size_actual = batch_end - batch_start
-                    
-                    # Cast rays for this batch
-                    batch_origins = ray_origins[batch_start:batch_end]
-                    batch_directions = sample_directions[batch_start:batch_end]
-                    
-                    # Cast rays
-                    res = engine.cast_rays(batch_origins, batch_directions)
-                    
-                    # Process hits
-                    hit_mask = res["geomID"] >= 0
-                    if np.any(hit_mask):
-                        # Get hit data
-                        hit_indices = np.where(hit_mask)[0]
-                        primIDs = res["primID"][hit_mask]
-                        ts = res["tfar"][hit_mask]
-                        us = res["u"][hit_mask]
-                        vs = res["v"][hit_mask]
+                    # Process each hit
+                    for i, hit_idx in enumerate(hit_indices):
+                        primID = primIDs[i]
+                        t = ts[i]
+                        u = us[i]
+                        v = vs[i]
+                        w = 1.0 - u - v
                         
-                        # Process each hit
-                        for i, hit_idx in enumerate(hit_indices):
-                            # Get global index in the batch
-                            global_idx = batch_start + hit_idx
-                            
-                            primID = primIDs[i]
-                            t = ts[i]
-                            u = us[i]
-                            v = vs[i]
-                            w = 1.0 - u - v
-                            
-                            # Get triangle vertices
-                            triangle_idx = primID
-                            v0_idx = src_triangle_indices_np[triangle_idx * 3 + 0]
-                            v1_idx = src_triangle_indices_np[triangle_idx * 3 + 1]
-                            v2_idx = src_triangle_indices_np[triangle_idx * 3 + 2]
-                            
-                            v0 = src_triangles_np[v0_idx]
-                            v1 = src_triangles_np[v1_idx]
-                            v2 = src_triangles_np[v2_idx]
-                            
-                            # Calculate intersection point (barycentric coordinates)
-                            intersection_point = w * v0 + u * v1 + v * v2
-                            
-                            # Get ray data
-                            vertex_idx = ray_data["vertex_idx"][global_idx]
-                            from_point = ray_data["from_point"][global_idx]
-                            node_weight = ray_data["node_weight"][global_idx]
-                            target_distance = ray_data["target_distance"][global_idx]
-                            
-                            # Create result node
-                            result_node = RaycastResult(
-                                from_point=from_point,
-                                point=intersection_point,
-                                triangle_index=int(primID),
-                                weight=float(node_weight),
-                                relate_distance=float(target_distance / t)
-                            )
-                            
-                            results[vertex_idx].append(result_node)
-        
-        return results
-    
-    # Split vertices into chunks for parallel processing
-    vertex_indices = list(range(len(tar_mapping_points)))
-    chunk_size = max(1, len(vertex_indices) // num_threads)
-    vertex_chunks = [vertex_indices[i:i+chunk_size] for i in range(0, len(vertex_indices), chunk_size)]
-    
-    # Use ThreadPoolExecutor for parallel processing
-    # Note: We're creating a partial function with engine and target_points already bound
-    process_func = partial(process_vertex_chunk, engine=engine, target_points=target_points)
-    
-    # Process chunks in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-        chunk_results = list(executor.map(process_func, vertex_chunks))
-    
-    # Update progress bar
-    if not cmds.about(batch=True):
-        cmds.progressBar(bar, edit=True, progress=len(tar_mapping_points))
-    
-    # Merge results from all chunks
-    for chunk_result in chunk_results:
-        for vertex_idx, results in enumerate(chunk_result):
-            if results:  # Only append if there are results
-                raycast_result_array[vertex_idx].extend(results)
+                        # Get triangle vertices
+                        triangle_idx = primID
+                        v0_idx = src_triangle_indices_np[triangle_idx * 3 + 0]
+                        v1_idx = src_triangle_indices_np[triangle_idx * 3 + 1]
+                        v2_idx = src_triangle_indices_np[triangle_idx * 3 + 2]
+                        
+                        v0 = src_triangles_np[v0_idx]
+                        v1 = src_triangles_np[v1_idx]
+                        v2 = src_triangles_np[v2_idx]
+                        
+                        # Calculate intersection point (barycentric coordinates)
+                        intersection_point = w * v0 + u * v1 + v * v2
+                        
+                        # Get ray data
+                        idx = hit_idx
+                        vertex_idx = ray_data["vertex_idx"][idx]
+                        from_point = ray_data["from_point"][idx]
+                        node_weight = ray_data["node_weight"][idx]
+                        target_distance = ray_data["target_distance"][idx]
+                        
+                        # Create result node
+                        result_node = RaycastResult(
+                            from_point=from_point,
+                            point=intersection_point,
+                            triangle_index=int(primID),
+                            weight=float(node_weight),
+                            relate_distance=float(target_distance / t)
+                        )
+                        
+                        raycast_result_array[vertex_idx].append(result_node)
     
     # Clean up
     engine.cleanup()
@@ -646,8 +659,7 @@ def perform_raycast_with_options(
         tar_joint_group: List["JointNode"],
         src_bone_group: List["BoneNode"],
         tar_bone_group: List["BoneNode"],
-        options: RegistrationOptions,
-        num_threads: int = 4
+        options: RegistrationOptions
 ) -> List[List[RaycastResult]]:
     """Perform raycasting with registration options
     
@@ -664,7 +676,6 @@ def perform_raycast_with_options(
         src_bone_group: Source bone group
         tar_bone_group: Target bone group
         options: Registration options
-        num_threads: Number of threads to use for parallel processing
         
     Returns:
         List of raycast results for each target vertex
@@ -682,6 +693,5 @@ def perform_raycast_with_options(
         src_bone_group=src_bone_group,
         tar_bone_group=tar_bone_group,
         batch_size=options.batch_size,
-        max_triangles=options.max_triangles,
-        num_threads=num_threads
+        max_triangles=options.max_triangles
     )

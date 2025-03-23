@@ -105,7 +105,6 @@ from .geometry import (
 
 # Raycast functions
 from .raycast import (
-    build_embree_scene_from_source,
     perform_raycast
 )
 
@@ -158,7 +157,6 @@ __all__ = [
     'triangle_interpolation',
     
     # Raycast functions
-    'build_embree_scene_from_source',
     'perform_raycast',
     
     # Utility functions

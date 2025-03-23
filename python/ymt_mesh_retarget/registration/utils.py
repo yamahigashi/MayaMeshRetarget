@@ -38,28 +38,22 @@ def get_matched_info(
         - List of matched target joint indices
         - List of matched joint short names
     """
-    # Initialize matched joint flags
-    src_matched_flags = np.zeros(len(src_joint_group), dtype=bool)
-    tar_matched_flags = np.zeros(len(tar_joint_group), dtype=bool)
+    matched_pairs = []
     matched_joint_names = []
 
-    for i, tar_joint in enumerate(tar_joint_group):
-        tar_name = get_short_name(tar_joint.detail_name)
-
-        for j, src_joint in enumerate(src_joint_group):
-            src_name = get_short_name(src_joint.detail_name)
-
+    for i, src_joint in enumerate(src_joint_group):
+        src_name = get_short_name(src_joint.detail_name)
+        for j, tar_joint in enumerate(tar_joint_group):
+            tar_name = get_short_name(tar_joint.detail_name)
             if src_name == tar_name:
-                tar_matched_flags[i] = True
-                src_matched_flags[j] = True
+                matched_pairs.append((i, j))
                 matched_joint_names.append(tar_name)
                 break
 
-    matched_src_indices = np.where(src_matched_flags)[0]
-    matched_tar_indices = np.where(tar_matched_flags)[0]
+    src_indices = [pair[0] for pair in matched_pairs]
+    tar_indices = [pair[1] for pair in matched_pairs]
 
-    # Convert numpy arrays to Python lists to ensure type compatibility
-    return ensure_list(matched_src_indices), ensure_list(matched_tar_indices), matched_joint_names
+    return ensure_list(src_indices), ensure_list(tar_indices), matched_joint_names
 
 
 def find_root_joints(joint_paths: typing.Union[list[om.MDagPath], list[JointNode]]) -> list[om.MDagPath]:

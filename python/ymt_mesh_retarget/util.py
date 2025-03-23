@@ -2,7 +2,7 @@
 
 import functools
 import time
-from typing import TYPE_CHECKING
+from typing import TypeVar, Callable, List, Dict, Any, Union, Optional, Tuple, cast
 
 from scipy.sparse import (
     lil_matrix,
@@ -17,31 +17,27 @@ from maya.api import (
     OpenMayaAnim as oma,
 )
 
-
-if TYPE_CHECKING:
-    from typing import (
-        Any,  # noqa: F401
-        Callable,  # noqa: F401
-        Dict,  # noqa: F401
-        List,  # noqa: F401
-        Optional,  # noqa: F401
-        Text,  # noqa: F401
-        Tuple,  # noqa: F401
-        TypeVar,
-        Union,  # noqa: F401
-    )
-
-    RT = TypeVar("RT")
-
-
 from .logger import logger
+from .types import MeshPath, VertexArray, FloatArray, IntArray, to_ndarray
+
+RT = TypeVar("RT")
 
 
 ##############################################################################
 # decorators
 ##############################################################################
-def timeit(func):
-    def wrapper(*args, **kwargs):
+def timeit(func: Callable[..., RT]) -> Callable[..., RT]:
+    """Decorator to measure and log the execution time of a function.
+
+    Args:
+        func: Function to time
+
+    Returns:
+        Wrapped function
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> RT:
         start_time = time.time()
         result = func(*args, **kwargs)
         end_time = time.time()
@@ -51,29 +47,29 @@ def timeit(func):
     return wrapper
 
 
-def viewport_off(func):
-    # type: (Callable[..., RT]) -> Callable[..., RT]
+def viewport_off(func: Callable[..., RT]) -> Callable[..., RT]:
     """Decorator - Turn off Maya display while func is running.
 
-    if func will fail, the error will be raised after.
+    If func will fail, the error will be raised after.
 
-    type: (function) -> function
+    Args:
+        func: Function to wrap
 
+    Returns:
+        Wrapped function with viewport disabled during execution
     """
 
     @functools.wraps(func)
-    def wrap(*args, **kwargs):
-        # type: (list[Any], Dict[Any, RT]) -> RT
-
+    def wrap(*args: Any, **kwargs: Any) -> RT:
         # Turn $gMainPane Off:
         from maya import cmds, mel
 
         # paneLayout -manage
-        gMainPane = mel.eval("global string $gMainPane; $temp = $gMainPane;")  # type: ignore
+        gMainPane = mel.eval("global string $gMainPane; $temp = $gMainPane;")
         cmds.paneLayout(gMainPane, edit=True, manage=False)
 
         # ogs
-        ogs_paused = cmds.ogs(q=True, pause=True)  # type: ignore
+        ogs_paused = cmds.ogs(q=True, pause=True)
         if not ogs_paused:
             cmds.ogs(pause=True)
 
@@ -99,13 +95,18 @@ def viewport_off(func):
     return wrap
 
 
-def one_undo(func):
-    """Puts the wrapped `func` into a single Maya Undo action, then
-    undoes it when the function enters the finally: block.
+def one_undo(func: Callable[..., RT]) -> Callable[..., RT]:
+    """Puts the wrapped function into a single Maya Undo action.
+
+    Args:
+        func: Function to wrap
+
+    Returns:
+        Wrapped function with undo chunk handling
     """
 
     @functools.wraps(func)
-    def _undofunc(*args, **kwargs):
+    def _undofunc(*args: Any, **kwargs: Any) -> RT:
         import maya.cmds as cmds
 
         try:
@@ -120,21 +121,20 @@ def one_undo(func):
     return _undofunc
 
 
-def autokey_off(func):
-    # type: (Callable[..., RT]) -> Callable[..., RT]
+def autokey_off(func: Callable[..., RT]) -> Callable[..., RT]:
     """Decorator - Turn off AutoKey while func is running.
 
-    if func will fail, the error will be raised after.
+    If func will fail, the error will be raised after.
 
-    type: (function) -> function
+    Args:
+        func: Function to wrap
 
+    Returns:
+        Wrapped function with autokey disabled during execution
     """
 
     @functools.wraps(func)
-    def wrap(*args, **kwargs):
-        # type: (List[Any], Dict[Any, Any]) -> RT
-
-        # Turn $gMainPane Off:
+    def wrap(*args: Any, **kwargs: Any) -> RT:
         import maya.mel as mel  # pylint: disable=unused-import  # noqa
         import maya.cmds as cmds
 
@@ -162,17 +162,22 @@ def autokey_off(func):
 ##############################################################################
 # utility functions for OpenMaya
 ##############################################################################
-def get_bounding_box(mesh_path):
-    # type: (om.MDagPath|str) -> om.MBoundingBox
+def get_bounding_box(mesh_path: MeshPath) -> om.MBoundingBox:
     """Get the bounding box of the given mesh.
 
-    :param mesh_path: The target mesh DAG path
-    :return: A tuple of two points representing the minimum and maximum corners of the bounding box
+    Args:
+        mesh_path: The target mesh DAG path
+
+    Returns:
+        Maya bounding box object
+
+    Raises:
+        ValueError: If invalid mesh name is provided
     """
     if isinstance(mesh_path, str):
         res = get_mesh_dag(mesh_path)
         if not res:
-            raise ValueError("Invalid mesh name")
+            raise ValueError(f"Invalid mesh name: {mesh_path}")
         mesh_path = res
 
     mesh_fn = om.MFnMesh(mesh_path)
@@ -180,21 +185,36 @@ def get_bounding_box(mesh_path):
     return bbox
 
 
-def get_mesh_fn(name):
-    # type: (str|om.MDagPath) -> om.MFnMesh
-    """Get the MFnMesh object of the given mesh name."""
+def get_mesh_fn(name: MeshPath) -> om.MFnMesh:
+    """Get the MFnMesh object of the given mesh name.
+
+    Args:
+        name: Maya mesh path or name
+
+    Returns:
+        Maya mesh function set
+
+    Raises:
+        ValueError: If invalid mesh name is provided
+    """
     if isinstance(name, str):
         res = get_mesh_dag(name)
         if not res:
-            raise ValueError("Invalid mesh name")
+            raise ValueError(f"Invalid mesh name: {name}")
         name = res
 
     return om.MFnMesh(name)
 
 
-def get_mesh_dag(name):
-    # type: (str) -> om.MDagPath|None
-    """Get the MFnMesh object of the given mesh name."""
+def get_mesh_dag(name: str) -> Optional[om.MDagPath]:
+    """Get the MDagPath object of the given mesh name.
+
+    Args:
+        name: Maya mesh name
+
+    Returns:
+        Maya DAG path object or None if not found
+    """
     if cmds.nodeType(name) == "transform":
         mesh = cmds.listRelatives(name, shapes=True, fullPath=True)
         if not mesh:
@@ -206,41 +226,62 @@ def get_mesh_dag(name):
     return dag
 
 
-def get_dag_path(node):
-    # type: (str) -> om.MDagPath
-    """Get the dag path of the given node."""
+def get_dag_path(node: str) -> om.MDagPath:
+    """Get the DAG path of the given node.
+
+    Args:
+        node: Maya node name
+
+    Returns:
+        Maya DAG path object
+    """
     selection_list = om.MSelectionList()
     selection_list.add(node)
     return selection_list.getDagPath(0)
 
 
-def convert_points_to_numpy(mesh_path, sampling_stride=1):
-    # type: (om.MDagPath|str, int) -> np.ndarray
-    """Convert mesh vertices to a numpy array."""
+def convert_points_to_numpy(mesh_path: MeshPath, sampling_stride: int = 1) -> VertexArray:
+    """Convert mesh vertices to a numpy array.
+
+    Args:
+        mesh_path: Maya mesh path or name
+        sampling_stride: Sampling stride for vertex processing (default: 1)
+
+    Returns:
+        NumPy array of vertex coordinates
+
+    Raises:
+        ValueError: If invalid mesh name is provided
+    """
     if isinstance(mesh_path, str):
         res = get_mesh_dag(mesh_path)
         if not res:
-            raise ValueError("Invalid mesh name")
+            raise ValueError(f"Invalid mesh name: {mesh_path}")
         mesh_path = res
 
     mesh_fn = get_mesh_fn(mesh_path)
     points = mesh_fn.getPoints()
     sparse_points = points[::sampling_stride]
-    return np.array([[p.x, p.y, p.z] for p in sparse_points])
+    return np.array([[p.x, p.y, p.z] for p in sparse_points], dtype=np.float64)
 
 
-def get_skin_cluster(mesh_path):
-    # type: (om.MDagPath) -> oma.MFnSkinCluster
+def get_skin_cluster(mesh_path: om.MDagPath) -> oma.MFnSkinCluster:
     """Get the skin cluster for the given mesh.
 
-    :param mesh: The mesh to retrieve the skin cluster from
-    :return: The skin cluster object or None if not found
+    Args:
+        mesh_path: The mesh to retrieve the skin cluster from
+
+    Returns:
+        The skin cluster function set
+
+    Raises:
+        ValueError: If mesh has no history or no skin cluster is found
     """
-    hostories = cmds.listHistory(mesh_path.fullPathName())
-    if not isinstance(hostories, list):
+    histories = cmds.listHistory(mesh_path.fullPathName())
+    if not isinstance(histories, list):
         raise ValueError(f"mesh_path must have a history: {mesh_path.fullPathName()}")
 
-    skin_path = [h for h in hostories if cmds.nodeType(h) == "skinCluster"]  # type: ignore
+    skin_path = [h for h in histories if cmds.nodeType(h) == "skinCluster"]
     if not skin_path:
         raise ValueError(f"No skin cluster found for the mesh {mesh_path.fullPathName()}")
 
@@ -254,31 +295,36 @@ def get_skin_cluster(mesh_path):
     return skin_cluster
 
 
-def get_skin_weight_as_sparse_matrix(mesh_path):
-    # type: (om.MDagPath|str) -> lil_matrix
+def get_skin_weight_as_sparse_matrix(mesh_path: MeshPath) -> lil_matrix:
     """Retrieve the skinning weights for the given mesh.
-    This function should extract the skinning weights from the skin cluster and
-    return them as a sparse matrix.
 
-    :param mesh: The mesh to retrieve the weights from
-    :return: A sparse matrix containing the skinning weights for the vertex
+    This function extracts the skinning weights from the skin cluster and
+    returns them as a sparse matrix.
+
+    Args:
+        mesh_path: The mesh to retrieve the weights from
+
+    Returns:
+        A sparse matrix containing the skinning weights for the vertices
+
+    Raises:
+        ValueError: If invalid mesh name is provided
     """
     if isinstance(mesh_path, str):
         res = get_mesh_dag(mesh_path)
         if not res:
-            raise ValueError("Invalid mesh name")
+            raise ValueError(f"Invalid mesh name: {mesh_path}")
         mesh_path = res
 
     skin_fn = get_skin_cluster(mesh_path)
 
     single_id_component = om.MFnSingleIndexedComponent()
-    vertex_component = single_id_component.create(om.MFn.kMeshVertComponent)  # type: ignore
+    vertex_component = single_id_component.create(om.MFn.kMeshVertComponent)
     weights, num_influence = skin_fn.getWeights(mesh_path, vertex_component)
 
     # Convert the weights to a numpy array, reshaping to match the vertex count
     np_weights = np.array(weights).reshape(-1, num_influence)
     sparse_weights = lil_matrix(np_weights.shape, dtype=np.float32)
-    non_zero_indices = np.nonzero(weights)
 
     # Set values in lil_matrix row by row to avoid index setting errors
     for i in range(np_weights.shape[0]):
@@ -289,18 +335,26 @@ def get_skin_weight_as_sparse_matrix(mesh_path):
     return sparse_weights
 
 
-def set_points(mesh, points) -> None:
-    # type: (str, list[om.MPoint]|om.MPointArray) -> None
-    """Set the deformed points to the mesh."""
+def set_points(mesh: MeshPath, points: Union[List[om.MPoint], om.MPointArray]) -> None:
+    """Set the deformed points to the mesh.
+
+    Args:
+        mesh: Maya mesh path or name
+        points: List of points or MPointArray to set on the mesh
+    """
     mesh_fn = get_mesh_fn(mesh)
     mesh_fn.setPoints(points)
 
 
 ##############################################################################
-def select_vertices(mesh_paths, vertices) -> None:
-    # type: (list[om.MDagPath]|om.MDagPath, np.ndarray) -> None
-    """Select the given vertices on the given meshes."""
-    if isinstance(mesh_paths, om.MDagPath):
+def select_vertices(mesh_paths: Union[List[MeshPath], MeshPath], vertices: IntArray) -> None:
+    """Select the given vertices on the given meshes.
+
+    Args:
+        mesh_paths: Maya mesh path(s) or name(s)
+        vertices: Array of vertex indices to select
+    """
+    if isinstance(mesh_paths, om.MDagPath) or isinstance(mesh_paths, str):
         mesh_paths = [mesh_paths]
 
     vertex_path = []
@@ -327,13 +381,22 @@ def select_vertices(mesh_paths, vertices) -> None:
 
 
 ##############################################################################
-def calculate_threshold_distance(mesh_paths, threadhold_ratio):
-    # type: (list[om.MDagPath]|om.MDagPath, float) -> float
-    """Returns dbox * threadhold_ratio.
+def calculate_threshold_distance(mesh_paths: Union[List[MeshPath], MeshPath], threshold_ratio: float) -> float:
+    """Returns dbox * threshold_ratio.
 
     dbox is the target mesh bounding box diagonal length.
+
+    Args:
+        mesh_paths: Maya mesh path(s) or name(s)
+        threshold_ratio: Ratio to multiply bounding box diagonal length by
+
+    Returns:
+        Threshold distance value
+
+    Raises:
+        ValueError: If invalid mesh name is provided
     """
-    if isinstance(mesh_paths, om.MDagPath):
+    if isinstance(mesh_paths, om.MDagPath) or isinstance(mesh_paths, str):
         mesh_paths = [mesh_paths]
 
     bbox = None
@@ -351,15 +414,19 @@ def calculate_threshold_distance(mesh_paths, threadhold_ratio):
     bbox_diag = bbox_max - bbox_min
     bbox_diag_length = bbox_diag.length()
 
-    threshold_distance = bbox_diag_length * threadhold_ratio
+    threshold_distance = bbox_diag_length * threshold_ratio
 
     return threshold_distance
 
 
 ##############################################################################
-def restructure_meshes_hierarchy(suffix="retarget", targets=None) -> None:
-    # type: (str, None|list[str]) -> None
-    """Restructure meshes hierarchy."""
+def restructure_meshes_hierarchy(suffix: str = "retarget", targets: Optional[List[str]] = None) -> None:
+    """Restructure meshes hierarchy by adding suffix to parent node names.
+
+    Args:
+        suffix: Suffix to add to parent node names
+        targets: List of target meshes or None to use selected objects
+    """
     if not targets:
         targets = cmds.ls(sl=True, type="transform", long=True)
 
@@ -368,7 +435,7 @@ def restructure_meshes_hierarchy(suffix="retarget", targets=None) -> None:
         parent = None
         for i in range(depth - 1):
             parts = mesh.split("|")
-            new_parts = parts
+            new_parts = parts.copy()
             new_parts[1] = "_".join([parts[1], suffix])
             parent_name = "|".join(new_parts[: i + 1])
 

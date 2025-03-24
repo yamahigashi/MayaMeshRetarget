@@ -160,8 +160,8 @@ def get_mapping_points(
 
 def create_optimized_correspondence_points(
     raycast_result_array: list[list["RaycastResult"]],
-    tar_mapping_points: list[MappingResult],
-    target_points: NDArray[np.float64],
+    src_mapping_points: list[MappingResult],
+    source_points: NDArray[np.float64],
     max_points_per_target: int = 1,
     min_weight_threshold: float = 0.01,
     distance_weight: float = 1.0,
@@ -169,14 +169,14 @@ def create_optimized_correspondence_points(
 ) -> list[CorrespondencePoint]:
     """Create optimized correspondence points from raycast results.
 
-    Keep only the most significant correspondence points for each target vertex
+    Keep only the most significant correspondence points for each source vertex
     to reduce the total number and improve quality.
 
     Args:
-        raycast_result_array: Array of raycast results per target vertex
-        tar_mapping_points: Target mapping points
-        target_points: Target vertex positions
-        max_points_per_target: Maximum number of correspondence points per target vertex
+        raycast_result_array: Array of raycast results per source vertex
+        src_mapping_points: source mapping points
+        source_points: source vertex positions
+        max_points_per_target: Maximum number of correspondence points per source vertex
         min_weight_threshold: Minimum weight threshold
         distance_weight: Weight coefficient for distance score
         ray_weight: Weight coefficient for ray information score
@@ -184,7 +184,7 @@ def create_optimized_correspondence_points(
     Returns:
         Optimized list of correspondence points
     """
-    # Dictionary to store correspondence points (key: target vertex index)
+    # Dictionary to store correspondence points (key: source vertex index)
     correspondence_dict: dict[int, list[dict[str, Any]]] = {}
 
     # Process raycast results
@@ -192,10 +192,10 @@ def create_optimized_correspondence_points(
         if not raycast_results:
             continue
 
-        target_idx = tar_mapping_points[i].vertex_index
-        target_pos = target_points[target_idx]
+        src_vtx_id = src_mapping_points[i].vertex_index
+        src_pos = source_points[src_vtx_id]
 
-        # Candidates list for this target vertex (with scores)
+        # Candidates list for this source vertex (with scores)
         candidates = []
 
         for raycast in raycast_results:
@@ -205,10 +205,10 @@ def create_optimized_correspondence_points(
                 continue
 
             # Intersection point
-            src_pos = raycast.point
+            tar_pos = raycast.point
 
             # Basic distance and weight
-            distance = np.linalg.norm(src_pos - target_pos)
+            distance = np.linalg.norm(tar_pos - src_pos)
             basic_weight = 1.0 / (1.0 + distance)
 
             # Use ray information to calculate quality score
@@ -226,17 +226,16 @@ def create_optimized_correspondence_points(
             # Add to candidates if score exceeds threshold
             if total_score >= min_weight_threshold:
                 # Find nearest source vertex to the intersection point
-                source_vertex_index = find_nearest_vertex_index(src_pos, triangle_idx, raycast)
-
-                candidates.append(
-                    {
-                        "source_index": source_vertex_index,
-                        "target_index": target_idx,
-                        "weight": basic_weight,  # Keep original weight calculation
-                        "score": total_score,  # Total score for sorting
-                        "triangle_index": triangle_idx,
-                    },
-                )
+                for tar_vtx_id in raycast.vertex_indices:
+                    candidates.append(
+                        {
+                            "source_index": src_vtx_id,
+                            "target_index": tar_vtx_id,
+                            "weight": basic_weight,  # Keep original weight calculation
+                            "score": total_score,  # Total score for sorting
+                            "triangle_index": triangle_idx,
+                        },
+                    )
 
         # Sort candidates by score (descending)
         candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -245,25 +244,25 @@ def create_optimized_correspondence_points(
         top_candidates = candidates[:max_points_per_target]
 
         # Add final correspondence points to dictionary
-        if target_idx not in correspondence_dict:
-            correspondence_dict[target_idx] = []
+        if src_vtx_id not in correspondence_dict:
+            correspondence_dict[src_vtx_id] = []
 
-        correspondence_dict[target_idx].extend(top_candidates)
+        correspondence_dict[src_vtx_id].extend(top_candidates)
 
     # Create final correspondence points list
     optimized_correspondence_points = []
 
-    for _target_idx, candidates in correspondence_dict.items():
+    for _source_idx, candidates in correspondence_dict.items():
         # Create correspondence point object for each candidate
         for candidate in candidates:
-            source_idx = candidate["source_index"]
-            if source_idx < 0:
+            target_idx = candidate["target_index"]
+            if target_idx < 0:
                 # Skip invalid source indices
                 continue
 
             correspondence_point = CorrespondencePoint(
-                source_index=source_idx,
-                target_index=candidate["target_index"],
+                source_index=candidate["source_index"],
+                target_index=target_idx,
                 weight=candidate["weight"],
             )
             optimized_correspondence_points.append(correspondence_point)
@@ -279,7 +278,7 @@ def find_correspondence_using_skeleton(
     source_joints: list[str],
     target_joints: list[str],
     sample_rate: float = 1.0,
-    _weight_decay: float = 2.0,
+    weight_decay: float = 2.0,  # noqa: ARG001
 ) -> list[CorrespondencePoint]:
     """Find correspondence points using skeleton information.
 

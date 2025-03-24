@@ -375,37 +375,18 @@ def get_raycast_engine(
         return StandardRaycastEngine(triangles, triangle_indices)
 
 
-def build_embree_scene_from_source(src_triangles: NDArray[np.float32]) -> tuple[Any, Any]:
-    """Build an Embree scene from source mesh triangle array.
-
-    Args:
-        src_triangles: shape = (num_tri, 3, 3)
-            Number of triangles = num_tri
-            Each triangle has 3 vertices, each vertex has xyz (3D) coordinates
-
-    Returns:
-        tuple: (EmbreeScene, TriangleMesh) - scene and mesh
-    """
-    if not EMBREE_AVAILABLE:
-        raise ImportError("Embree library is not available. Cannot build Embree scene.")
-
-    scene = rtcs.EmbreeScene()
-    mesh = TriangleMesh(scene, src_triangles)  # This builds the BVH
-    return scene, mesh
-
-
 def perform_raycast(
     src_mesh: "MeshObject",
     tar_mesh: "MeshObject",
-    tar_mapping_points: list["MappingResult"],
-    src_triangles: NDArray[np.float64],
-    src_triangle_indices: NDArray[np.int32],
+    src_mapping_points: list["MappingResult"],
+    tar_triangles: NDArray[np.float64],
+    tar_triangle_indices: NDArray[np.int32],
     sample_number: int,
     sample_degree: float,
     src_joint_group: list["JointNode"],
     tar_joint_group: list["JointNode"],
-    src_bone_group: list["BoneNode"],  # noqa: ARG001
-    tar_bone_group: list["BoneNode"],
+    src_bone_group: list["BoneNode"],
+    tar_bone_group: list["BoneNode"],  # noqa: ARG001
     batch_size: int = 1024,
     max_triangles: int = -1,
     sample_vertex_count: int = 1500,
@@ -419,9 +400,9 @@ def perform_raycast(
     Args:
         src_mesh: Source mesh object
         tar_mesh: Target mesh object
-        tar_mapping_points: Target mapping points
-        src_triangles: Source mesh vertices (N, 3)
-        src_triangle_indices: Source mesh triangle indices (T*3)
+        src_mapping_points: Source mapping points
+        tar_triangles: Target mesh vertices (N, 3)
+        tar_triangle_indices: Target mesh triangle indices (T*3)
         sample_number: Number of sample rays to cast
         sample_degree: Cone angle for sample rays (degrees)
         src_joint_group: Source joint group
@@ -441,20 +422,26 @@ def perform_raycast(
         logger.warning("Embree library is not available. Using standard raycasting.")
         force_standard_raycast = True
 
-    # Create joint mapping from target to source
-    src_indices, _, _ = get_matched_info(src_joint_group, tar_joint_group)
+    # Create joint mapping from source to target
+    src_indices, tar_indices, _names = get_matched_info(src_joint_group, tar_joint_group)
+
+    # Create mapping from source to target
+    src2tar_map = [-1] * len(src_joint_group)
+    for pair_i, s_idx in enumerate(src_indices):
+        t_idx = tar_indices[pair_i]
+        src2tar_map[s_idx] = t_idx
 
     # Convert input data to NumPy arrays
-    src_triangles_np = np.asarray(src_triangles, dtype=np.float32)
-    src_triangle_indices_np = np.asarray(src_triangle_indices, dtype=np.int32)
+    tar_triangles_np = np.asarray(tar_triangles, dtype=np.float32)
+    tar_triangle_indices_np = np.asarray(tar_triangle_indices, dtype=np.int32)
 
-    # Get number of source triangles
-    src_num_triangles = len(src_triangle_indices_np) // 3
+    # Get number of target triangles
+    tar_num_triangles = len(tar_triangle_indices_np) // 3
 
     # Limit triangles if requested
-    if max_triangles > 0 and max_triangles < src_num_triangles:
-        src_num_triangles = max_triangles
-        src_triangle_indices_np = src_triangle_indices_np[: max_triangles * 3]
+    if max_triangles > 0 and max_triangles < tar_num_triangles:
+        tar_num_triangles = max_triangles
+        tar_triangle_indices_np = tar_triangle_indices_np[: max_triangles * 3]
 
     # Set up progress bar
     bar = mel.eval("$tmp = $gMainProgressBar")
@@ -470,8 +457,8 @@ def perform_raycast(
 
     # Initialize raycast engine
     engine = get_raycast_engine(
-        src_triangles_np,
-        src_triangle_indices_np,
+        tar_triangles_np,
+        tar_triangle_indices_np,
         force_standard=force_standard_raycast,
     )
 
@@ -479,7 +466,7 @@ def perform_raycast(
         cmds.progressBar(bar, edit=True, step=40)
 
     # Initialize result array
-    raycast_result_array = [[] for _ in range(len(tar_mapping_points))]
+    raycast_result_array = [[] for _ in range(len(src_mapping_points))]
 
     # Initialize ray buffers
     ray_origins = np.zeros((batch_size, 3), dtype=np.float32)
@@ -504,33 +491,37 @@ def perform_raycast(
             edit=True,
             beginProgress=True,
             status="Calculating correspondence points...",
-            maxValue=len(tar_mapping_points),
+            maxValue=len(src_mapping_points),
         )
 
-    seed = hash(src_mesh.name + tar_mesh.name)
+    seed = hash(tar_mesh.name + src_mesh.name)
     random.seed(seed)
-    sample_vertex_count = min(sample_vertex_count, len(tar_mapping_points))
-    target_vertex_indices = random.sample(range(len(tar_mapping_points)), sample_vertex_count)
+    sample_vertex_count = min(sample_vertex_count, len(src_mapping_points))
+    source_vertex_indices = random.sample(range(len(src_mapping_points)), sample_vertex_count)
 
-    # Process each target vertex
-    for current_vert, mapping_result in enumerate(tar_mapping_points):
+    # Process each source vertex
+    for current_vert, mapping_result in enumerate(src_mapping_points):
         if not cmds.about(batch=True):
             cmds.progressBar(bar, edit=True, step=1)
 
-        if current_vert not in target_vertex_indices:
+        # Randomly sample vertices
+        if current_vert not in source_vertex_indices:
             continue
 
         # Skip if no mapping points
         if not mapping_result.node_array:
             continue
 
-        target_vertex_idx = mapping_result.vertex_index
-        target_vertex_pos = tar_mesh.get_points()[target_vertex_idx]
+        vertex_idx = mapping_result.vertex_index
+        vertex_pos = src_mesh.get_points()[vertex_idx]
+        flag = vertex_idx == 1929
+        if flag:
+            print(f"vertex_idx: {vertex_idx}, vertex_pos: {vertex_pos}")
 
         # Process each mapping point
         for current_node in mapping_result.node_array:
             # Get current bone index and weight
-            current_tar_bone_index = current_node.bone_index
+            current_src_bone_index = current_node.bone_index
             current_node_weight = current_node.weight
 
             # Skip if weight is very small
@@ -538,49 +529,50 @@ def perform_raycast(
                 continue
 
             # Get vector from mapping point to vertex
-            current_tar_p = current_node.point
-            current_tar_pv = target_vertex_pos - current_tar_p
+            current_src_p = current_node.point
+            current_src_pv = vertex_pos - current_src_p
 
             # Normalize direction vector
-            current_tar_pv_norm = np.linalg.norm(current_tar_pv)
-            if current_tar_pv_norm < 1e-10:
+            current_src_pv_norm = np.linalg.norm(current_src_pv)
+            if current_src_pv_norm < 1e-10:
                 continue
-            current_tar_normal_pv = current_tar_pv / current_tar_pv_norm
-
-            # Get target bone information
-            tar_start_joint_index = tar_bone_group[current_tar_bone_index].start_joint_index
-            tar_end_joint_index = tar_bone_group[current_tar_bone_index].end_joint_index
-
-            current_tar_bone_start_point = tar_joint_group[tar_start_joint_index].position
-            current_tar_bone_end_point = tar_joint_group[tar_end_joint_index].position
-            current_tar_bone_v = current_tar_bone_end_point - current_tar_bone_start_point
-
-            # Calculate distance ratio along bone
-            current_tar_bone_v_norm = np.linalg.norm(current_tar_bone_v)
-            if current_tar_bone_v_norm < 1e-10:
-                continue
-            tar_distance = np.linalg.norm(current_tar_p - current_tar_bone_start_point) / current_tar_bone_v_norm
+            current_src_normal_pv = current_src_pv / current_src_pv_norm
 
             # Get source bone information
-            src_start_joint_index = src_indices[tar_start_joint_index]
-            src_end_joint_index = src_indices[tar_end_joint_index]
-
-            if src_start_joint_index == -1 or src_end_joint_index == -1:
-                continue
+            src_start_joint_index = src_bone_group[current_src_bone_index].start_joint_index
+            src_end_joint_index = src_bone_group[current_src_bone_index].end_joint_index
 
             current_src_bone_start_point = src_joint_group[src_start_joint_index].position
             current_src_bone_end_point = src_joint_group[src_end_joint_index].position
             current_src_bone_v = current_src_bone_end_point - current_src_bone_start_point
 
-            # Calculate corresponding point on source bone
-            p = current_src_bone_start_point + current_src_bone_v * tar_distance
+            # Calculate distance ratio along bone
+            current_src_bone_v_norm = np.linalg.norm(current_src_bone_v)
+            if current_src_bone_v_norm < 1e-10:
+                continue
+            src_distance = np.linalg.norm(current_src_p - current_src_bone_start_point) / current_src_bone_v_norm
+
+            # Get target bone information
+            tar_start_joint_index = src2tar_map[src_start_joint_index]
+            tar_end_joint_index   = src2tar_map[src_end_joint_index]
+            if tar_start_joint_index < 0 or tar_end_joint_index < 0:
+                continue
+
+            current_tar_bone_start_point = tar_joint_group[tar_start_joint_index].position
+            current_tar_bone_end_point = tar_joint_group[tar_end_joint_index].position
+            current_tar_bone_v = current_tar_bone_end_point - current_tar_bone_start_point
+
+            # Calculate corresponding point on target bone
+            p = current_tar_bone_start_point + current_tar_bone_v * src_distance
             p = np.array(p).squeeze()
 
             # Get direction vector
-            d = np.array(current_tar_normal_pv).squeeze()
+            d = np.array(current_src_normal_pv).squeeze()
 
             # Generate sample directions
             sample_directions = geometry.rand_cone_vector(d, sample_degree, sample_number, seed)
+            if flag:
+                print(f"sample_directions: {sample_directions}")
 
             # Cast rays in batches
             n_rays = len(sample_directions)
@@ -597,7 +589,7 @@ def perform_raycast(
                 ray_data["vertex_idx"][:current_batch_size] = current_vert
                 ray_data["from_point"][:current_batch_size] = p
                 ray_data["node_weight"][:current_batch_size] = current_node_weight
-                ray_data["target_distance"][:current_batch_size] = current_tar_pv_norm
+                ray_data["target_distance"][:current_batch_size] = current_src_pv_norm
 
                 # Cast rays
                 res = engine.cast_rays(ray_origins[:current_batch_size], ray_directions[:current_batch_size])
@@ -612,6 +604,9 @@ def perform_raycast(
                     us = res["u"][hit_mask]
                     vs = res["v"][hit_mask]
 
+                    if flag:
+                        print(f"hit_indices: {hit_indices}, prim_ids: {prim_ids}, ts: {ts}, us: {us}, vs: {vs}")
+
                     # Process each hit
                     for i, hit_idx in enumerate(hit_indices):
                         prim_id = prim_ids[i]
@@ -622,13 +617,13 @@ def perform_raycast(
 
                         # Get triangle vertices
                         triangle_idx = prim_id
-                        v0_idx = src_triangle_indices_np[triangle_idx * 3 + 0]
-                        v1_idx = src_triangle_indices_np[triangle_idx * 3 + 1]
-                        v2_idx = src_triangle_indices_np[triangle_idx * 3 + 2]
+                        v0_idx = tar_triangle_indices_np[triangle_idx * 3 + 0]
+                        v1_idx = tar_triangle_indices_np[triangle_idx * 3 + 1]
+                        v2_idx = tar_triangle_indices_np[triangle_idx * 3 + 2]
 
-                        v0 = src_triangles_np[v0_idx]
-                        v1 = src_triangles_np[v1_idx]
-                        v2 = src_triangles_np[v2_idx]
+                        v0 = tar_triangles_np[v0_idx]
+                        v1 = tar_triangles_np[v1_idx]
+                        v2 = tar_triangles_np[v2_idx]
 
                         # Calculate intersection point (barycentric coordinates)
                         intersection_point = w * v0 + u * v1 + v * v2
@@ -645,6 +640,7 @@ def perform_raycast(
                             from_point=from_point,
                             point=intersection_point,
                             triangle_index=int(prim_id),
+                            vertex_indices=(v0_idx, v1_idx, v2_idx),
                             weight=float(node_weight),
                             relate_distance=float(target_distance / t),
                         )
@@ -664,9 +660,9 @@ def perform_raycast(
 def perform_raycast_with_options(
     src_mesh: "MeshObject",
     tar_mesh: "MeshObject",
-    tar_mapping_points: list["MappingResult"],
-    src_triangles: NDArray[np.float64],
-    src_triangle_indices: NDArray[np.int32],
+    src_mapping_points: list["MappingResult"],
+    tar_triangles: NDArray[np.float64],
+    tar_triangle_indices: NDArray[np.int32],
     src_joint_group: list["JointNode"],
     tar_joint_group: list["JointNode"],
     src_bone_group: list["BoneNode"],
@@ -678,11 +674,11 @@ def perform_raycast_with_options(
     Convenience function that uses RegistrationOptions to configure raycasting.
 
     Args:
-        src_mesh: Source mesh object
-        tar_mesh: Target mesh object
-        tar_mapping_points: Target mapping points
-        src_triangles: Source mesh vertices
-        src_triangle_indices: Source mesh triangle indices
+        src_mesh: Target mesh object
+        tar_mesh: Source mesh object
+        src_mapping_points: Sorce mapping points
+        tar_triangles: Target mesh vertices
+        tar_triangle_indices: Target mesh triangle indices
         src_joint_group: Source joint group
         tar_joint_group: Target joint group
         src_bone_group: Source bone group
@@ -695,9 +691,9 @@ def perform_raycast_with_options(
     return perform_raycast(
         src_mesh=src_mesh,
         tar_mesh=tar_mesh,
-        tar_mapping_points=tar_mapping_points,
-        src_triangles=src_triangles,
-        src_triangle_indices=src_triangle_indices,
+        src_mapping_points=src_mapping_points,
+        tar_triangles=tar_triangles,
+        tar_triangle_indices=tar_triangle_indices,
         sample_number=options.sample_number,
         sample_degree=options.sample_degree,
         src_joint_group=src_joint_group,

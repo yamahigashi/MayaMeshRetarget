@@ -280,20 +280,20 @@ class MeshRegistration:
 
         # Get the Maya mesh triangles
         logger.info("Getting source mesh triangle information...")
-        mesh_fn = self.source_mesh.mesh_fn
+        mesh_fn = self.target_mesh.mesh_fn
         _tri_counts, tri_indices = mesh_fn.getTriangles()
-        src_triangle_indices = np.array(tri_indices, dtype=np.int32)
+        tar_triangle_indices = np.array(tri_indices, dtype=np.int32)
 
         # Calculate mapping points
         logger.info("Calculating mapping points...")
-        tar_mapping_points = get_mapping_points(
-            target_points,
-            self.target_joint_group,
-            self.target_bone_group,
-            target_weights,
-            target_joints,
+        src_mapping_points = get_mapping_points(
+            source_points,
+            self.source_joint_group,
+            self.source_bone_group,
+            source_weights,
+            source_joints,
         )
-        logger.info(f"Mapping points: {len(tar_mapping_points)}")
+        logger.info(f"Mapping points: {len(src_mapping_points)}")
 
         # Find correspondence points using raycast
         message = f"Finding correspondences with {self.options.sample_number} rays at "\
@@ -303,9 +303,9 @@ class MeshRegistration:
         raycast_result_array = perform_raycast_with_options(
             self.source_mesh,
             self.target_mesh,
-            tar_mapping_points,
-            src_triangles=source_points,
-            src_triangle_indices=src_triangle_indices,
+            src_mapping_points,
+            tar_triangles=target_points,
+            tar_triangle_indices=tar_triangle_indices,
             src_joint_group=self.source_joint_group,
             tar_joint_group=self.target_joint_group,
             src_bone_group=self.source_bone_group,
@@ -317,8 +317,8 @@ class MeshRegistration:
         # Create correspondence points
         self.correspondence_points = create_optimized_correspondence_points(
             raycast_result_array,
-            tar_mapping_points,
-            target_points,
+            src_mapping_points,
+            source_points,
             max_points_per_target=self.options.max_points_per_target,
             min_weight_threshold=self.options.min_weight_threshold,
             distance_weight=self.options.distance_weight,
@@ -378,12 +378,6 @@ class MeshRegistration:
                 joint.position = original_joint_positions[i]
                 pos_array = np.array(joint.position).squeeze()
                 cmds.xform(joint.path.fullPathName(), ws=True, t=pos_array)
-
-            # Note: Since we're now using vertex indices instead of positions,
-            # we don't need to manually transform the correspondence points
-            # They will be automatically updated when we query the mesh
-
-            logger.info("Source bones restored to original space.")
 
         if self.options.align_spaces and original_joint_matrices is not None:
             for i, joint in enumerate(self.source_joint_group):

@@ -243,6 +243,7 @@ class RaycastResult:
     from_point: Vector3  # (3, ) - Ray origin
     point: Vector3  # (3, ) - Hit point
     triangle_index: TriangleIndex  # Triangle index
+    vertex_indices: tuple[VertexIndex, VertexIndex, VertexIndex]  # Vertex indices of the triangle
     weight: float  # Weight
     relate_distance: float  # Relative distance metric
 

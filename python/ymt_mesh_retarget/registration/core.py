@@ -10,6 +10,8 @@ import numpy as np
 from maya.api import OpenMaya as om
 from numpy.typing import NDArray
 
+# from ..logger import logger
+
 
 # fmt: off
 # Type aliases for improved readability
@@ -62,6 +64,7 @@ class CorrespondencePoint:
 
     def __post_init__(self) -> None:
         """Validate data after initialization."""
+        # TODO: implement validation
         # if not isinstance(self.source_index, int) or self.source_index < 0:
         #     raise ValueError(f"Invalid source_index: {self.source_index}. Must be a non-negative integer.")
         # if not isinstance(self.target_index, int) or self.target_index < 0:
@@ -324,6 +327,44 @@ class RegistrationOptions:
             Higher values prioritize cleaner ray hits.
             - Default: 0.5
 
+        use_scoring_components: Whether to use the enhanced scoring component system.
+            When True, uses the more advanced multi-dimensional scoring system instead
+            of the simple distance and ray weight system. This option takes precedence
+            over the individual weight parameters above.
+            - Default: False
+
+        scoring_components: List of scoring components to use for correspondence evaluation.
+            Each component evaluates a different aspect of mesh correspondence quality.
+            This is initialized with default components if use_scoring_components is True.
+            - To customize, modify this list directly or set use_scoring_components to True
+              and let the system initialize the defaults.
+            - Leave empty to use the legacy scoring system with distance_weight and ray_weight.
+            - Default: [] (empty list, initialized at runtime if use_scoring_components is True)
+
+        use_normal_scoring: Whether to use vertex normal similarity for scoring.
+            When True, enables normal-based scoring which helps ensure normals 
+            point in similar directions at correspondence points.
+            - Only applicable when use_scoring_components is True.
+            - Default: True
+
+        use_weight_scoring: Whether to use weight vector similarity for scoring.
+            When True, enables weight vector similarity scoring which helps match
+            vertices with similar skinning weights.
+            - Only applicable when use_scoring_components is True.
+            - Requires meshes with skinning.
+            - Default: False
+
+        use_laplacian_scoring: Whether to use Laplacian similarity for scoring.
+            When True, enables Laplacian similarity scoring which helps match
+            vertices with similar local geometry.
+            - Only applicable when use_scoring_components is True.
+            - Default: False
+
+        precompute_mesh_data: Whether to precompute mesh data (normals, weights, laplacians).
+            When True, prepares all mesh data ahead of time, which improves performance
+            at the cost of increased memory usage.
+            - Default: True
+
         max_triangles: Maximum triangles to process (-1 for unlimited).
             Can be used to limit processing for extremely large meshes.
             - For normal use: -1 (process all triangles)
@@ -366,6 +407,11 @@ class RegistrationOptions:
         options.sample_number = 64
         options.sample_degree = 60.0
 
+        # Enable advanced scoring
+        options.use_scoring_components = True
+        options.use_normal_scoring = True
+        options.use_weight_scoring = True
+
         # Use with mesh registration
         registration = MeshRegistration("sourceModel", "targetModel", options)
         ```
@@ -380,6 +426,12 @@ class RegistrationOptions:
     min_weight_threshold: float = 0.01
     distance_weight: float = 1.0
     ray_weight: float = 0.5
+    use_scoring_components: bool = False
+    scoring_components: list = field(default_factory=list)
+    use_normal_scoring: bool = True
+    use_weight_scoring: bool = False
+    use_laplacian_scoring: bool = False
+    precompute_mesh_data: bool = True
     max_triangles: int = -1
     batch_size: int = 1024
     num_threads: int = 4

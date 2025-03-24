@@ -22,8 +22,6 @@ def rand_cone_vector(
 ) -> NDArray[np.float32]:
     """Generate random vectors within a cone around a direction vector.
 
-    Python implementation of the rand_cone_vector function from C++ version
-
     Args:
         direction: Center direction vector of the cone (doesn't need to be normalized)
         angle_degree: Angle of the cone in degrees

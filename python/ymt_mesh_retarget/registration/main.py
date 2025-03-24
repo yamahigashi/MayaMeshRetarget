@@ -24,6 +24,7 @@ from ..util import (
 from .alignment import (
     calculate_alignment_transform,
     get_joint_tree,
+    get_matched_info,
     match_joint_trees,
 )
 
@@ -229,6 +230,10 @@ class MeshRegistration:
 
         # Validate options
         self.options = validate_registration_options(self.options)
+        
+        # Precompute mesh data if needed
+        if self.options.use_scoring_components and self.options.precompute_mesh_data:
+            self._precompute_mesh_data()
 
         # Get information from meshes
         source_points = self.source_mesh.get_points()
@@ -323,6 +328,9 @@ class MeshRegistration:
             min_weight_threshold=self.options.min_weight_threshold,
             distance_weight=self.options.distance_weight,
             ray_weight=self.options.ray_weight,
+            source_mesh=self.source_mesh,
+            target_mesh=self.target_mesh,
+            options=self.options,
         )
         logger.info(f"Optimized correspondence points: {len(self.correspondence_points)}")
 
@@ -513,6 +521,52 @@ class MeshRegistration:
         )
 
         return group_name
+        
+    def _precompute_mesh_data(self):
+        """Precompute mesh data for advanced scoring.
+        
+        This method precomputes vertex normals, Laplacian coordinates,
+        and weight vectors for both source and target meshes.
+        The data is cached in the mesh objects for fast access during scoring.
+        """
+        logger.info("Precomputing mesh data for advanced scoring...")
+        
+        # Always precompute normals if they're going to be used
+        if self.options.use_normal_scoring:
+            logger.info("Precomputing vertex normals...")
+            self.source_mesh.precompute_vertex_normals()
+            self.target_mesh.precompute_vertex_normals()
+            
+        # Conditionally precompute Laplacians if they're going to be used
+        if self.options.use_laplacian_scoring:
+            logger.info("Precomputing Laplacian coordinates...")
+            self.source_mesh.precompute_laplacians()
+            self.target_mesh.precompute_laplacians()
+            
+        # Conditionally precompute weight vectors if they're going to be used
+        if self.options.use_weight_scoring:
+            logger.info("Precomputing weight vectors...")
+            # Get joint relationships
+            if not hasattr(self, 'source_joint_group') or not hasattr(self, 'target_joint_group') or self.source_joint_group is None or self.target_joint_group is None:
+                source_weights, source_joints = self._get_skin_weights(self.source_mesh)
+                target_weights, target_joints = self._get_skin_weights(self.target_mesh)
+                
+                self.source_joint_paths, self.source_joint_group, self.source_bone_group = get_joint_tree(source_joints)
+                self.target_joint_paths, self.target_joint_group, self.target_bone_group = get_joint_tree(target_joints)
+            
+            # Get matched joint names for filtering
+            try:
+                _, _, joint_map = get_matched_info(self.source_joint_group, self.target_joint_group)
+                matched_source_joints = [src for src, _ in joint_map.items()]
+                matched_target_joints = [tar for _, tar in joint_map.items()]
+                
+                # Precompute weight vectors with matched joint filtering
+                self.source_mesh.precompute_weight_vectors(matched_source_joints)
+                self.target_mesh.precompute_weight_vectors(matched_target_joints)
+            except Exception as e:
+                logger.warning(f"Failed to precompute weight vectors: {e}")
+            
+        logger.info("Mesh data precomputation complete!")
 
 
 def visualize_correspondences(

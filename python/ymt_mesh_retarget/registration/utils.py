@@ -3,6 +3,7 @@
 This module provides common utility functions used throughout the registration process.
 """
 
+import multiprocessing
 import typing
 
 import numpy as np
@@ -10,6 +11,7 @@ from maya import cmds
 from maya.api import OpenMaya as om
 from numpy.typing import NDArray
 
+from ..logger import logger
 from ..types import ensure_list
 from ..util import get_short_name, timeit
 from .core import JointNode, RegistrationOptions, Vector3
@@ -170,7 +172,6 @@ def get_default_registration_options() -> RegistrationOptions:
     Returns:
         Default RegistrationOptions
     """
-    import multiprocessing
 
     # Determine optimal number of threads based on CPU count
     # Use a reasonable default based on available cores, but limit to avoid system overload
@@ -187,6 +188,12 @@ def get_default_registration_options() -> RegistrationOptions:
         min_weight_threshold=0.01,  # Minimum weight threshold
         distance_weight=1.0,  # Distance weight
         ray_weight=0.5,  # Ray weight
+        use_scoring_components=False,  # Use legacy scoring by default
+        scoring_components=[],  # Empty scoring components list (initialized on demand)
+        use_normal_scoring=True,  # Enable normal scoring by default
+        use_weight_scoring=False,  # Disable weight scoring by default (requires skinning)
+        use_laplacian_scoring=False,  # Disable laplacian scoring by default
+        precompute_mesh_data=True,  # Precompute mesh data for better performance
         max_triangles=-1,  # No triangle limit
         batch_size=1024,  # Process 1024 rays at a time
         num_threads=default_threads,  # Use CPU core count-based threading
@@ -198,6 +205,7 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
     """Validate and normalize registration options.
 
     Ensures all options are within valid ranges and normalizes values.
+    Also initializes scoring components if requested.
 
     Args:
         options: RegistrationOptions to validate
@@ -205,7 +213,7 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
     Returns:
         Validated and normalized RegistrationOptions
     """
-    import multiprocessing
+    from .scoring_components import create_default_scoring_components
 
     options.sample_count = max(100, min(10000, options.sample_count))
     options.sample_number = max(4, min(128, options.sample_number))
@@ -218,6 +226,22 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
     # Validate thread count (1 to max available CPUs)
     cpu_count = multiprocessing.cpu_count()
     options.num_threads = max(1, min(cpu_count, options.num_threads))
+
+    # Initialize scoring components if requested
+    if options.use_scoring_components and not options.scoring_components:
+        logger.info("Initializing scoring components...")
+        options.scoring_components = create_default_scoring_components()
+
+        # Filter scoring components based on user preferences
+        if not options.use_normal_scoring:
+            options.scoring_components = [
+                comp for comp in options.scoring_components
+                if comp.__class__.__name__ != 'NormalScoring'
+            ]
+
+        # We don't add weight and laplacian scoring by default, but if user has
+        # set the flags to True, we should add them
+        # This would be implemented when running the registration process
 
     return options
 

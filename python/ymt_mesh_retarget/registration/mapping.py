@@ -4,16 +4,18 @@ This module provides functions for creating and managing mapping points between 
 """
 
 import typing
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ..logger import logger
 from ..util import get_short_name, timeit
-from .core import CorrespondencePoint, MappingNode, MappingResult, Vector3
+from .core import CorrespondencePoint, MappingNode, MappingResult, RegistrationOptions, Vector3
 
 
 if typing.TYPE_CHECKING:
+    from ..objects.mesh import MeshObject
     from .core import BoneNode, JointNode, RaycastResult
 
 
@@ -166,6 +168,9 @@ def create_optimized_correspondence_points(
     min_weight_threshold: float = 0.01,
     distance_weight: float = 1.0,
     ray_weight: float = 0.5,
+    source_mesh: Optional["MeshObject"] = None,
+    target_mesh: Optional["MeshObject"] = None,
+    options: Optional["RegistrationOptions"] = None,
 ) -> list[CorrespondencePoint]:
     """Create optimized correspondence points from raycast results.
 
@@ -180,12 +185,40 @@ def create_optimized_correspondence_points(
         min_weight_threshold: Minimum weight threshold
         distance_weight: Weight coefficient for distance score
         ray_weight: Weight coefficient for ray information score
+        source_mesh: Optional source mesh for advanced scoring
+        target_mesh: Optional target mesh for advanced scoring
+        options: Optional registration options for advanced configuration
 
     Returns:
         Optimized list of correspondence points
     """
     # Dictionary to store correspondence points (key: source vertex index)
     correspondence_dict: dict[int, list[dict[str, Any]]] = {}
+
+    # Check if we're using advanced scoring components
+    use_scoring_components = False
+    scoring_components = []
+
+    if options and options.use_scoring_components and options.scoring_components:
+        use_scoring_components = True
+        scoring_components = options.scoring_components
+        logger.info(f"Using {len(scoring_components)} scoring components for correspondence optimization")
+
+        # If we're using advanced scoring but don't have the meshes, issue a warning
+        if not source_mesh or not target_mesh:
+            logger.warning("Advanced scoring enabled but meshes not provided. Falling back to basic scoring.")
+            use_scoring_components = False
+    else:
+        # Backward compatibility: create basic scoring components from weights
+        from .scoring_components import DistanceScoring, RayQualityScoring
+
+        # Only create these if we have both weight parameters
+        if distance_weight is not None and ray_weight is not None:
+            scoring_components = [
+                DistanceScoring(weight=distance_weight),
+                RayQualityScoring(weight=ray_weight),
+            ]
+            use_scoring_components = True
 
     # Process raycast results
     for i, raycast_results in enumerate(raycast_result_array):
@@ -211,17 +244,80 @@ def create_optimized_correspondence_points(
             distance = np.linalg.norm(tar_pos - src_pos)
             basic_weight = 1.0 / (1.0 + distance)
 
-            # Use ray information to calculate quality score
-            ray_quality = 1.0 / (1.0 + raycast.relate_distance)
+            if use_scoring_components:
+                # Create context for scoring components
+                context = {
+                    "src_pos": src_pos,
+                    "tar_pos": tar_pos,
+                    "distance": distance,
+                    "raycast_result": raycast,
+                }
 
-            # Consider node weight
-            node_weight = raycast.weight
+                # Add mesh-specific data if available
+                if source_mesh and target_mesh:
+                    # Add source normal if available
+                    try:
+                        context["normal_src"] = source_mesh.get_vertex_normal(src_vtx_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to get source normal: {e}")
+                        raise
 
-            # Calculate total score considering distance, ray quality, and node weight
-            total_score = (
-                distance_weight * basic_weight  # Distance-based score
-                + ray_weight * ray_quality * node_weight  # Ray quality and node weight
-            ) / (distance_weight + ray_weight)  # Normalize
+                    # For target normals, use vertex normals from hit triangle
+                    # We'll use the first vertex index as a simplified approach
+                    if raycast.vertex_indices:
+                        try:
+                            tar_vtx_id = raycast.vertex_indices[0]
+                            context["normal_tar"] = target_mesh.get_vertex_normal(tar_vtx_id)
+                        except Exception as e:
+                            logger.debug(f"Failed to get target normal: {e}")
+                            raise
+
+                    # Add laplacians if available and enabled
+                    if options and options.use_laplacian_scoring:
+                        try:
+                            context["laplacian_src"] = source_mesh.compute_laplacian_for_vertex(src_vtx_id)
+                            if raycast.vertex_indices:
+                                tar_vtx_id = raycast.vertex_indices[0]
+                                context["laplacian_tar"] = target_mesh.compute_laplacian_for_vertex(tar_vtx_id)
+                        except Exception as e:
+                            logger.debug(f"Failed to get laplacians: {e}")
+                            raise
+
+                    # Add weight vectors if available and enabled
+                    if options and options.use_weight_scoring:
+                        try:
+                            context["weights_src"] = source_mesh.get_vertex_weight_vector(src_vtx_id)
+                            if raycast.vertex_indices:
+                                tar_vtx_id = raycast.vertex_indices[0]
+                                context["weights_tar"] = target_mesh.get_vertex_weight_vector(tar_vtx_id)
+                        except Exception as e:
+                            logger.debug(f"Failed to get weight vectors: {e}")
+                            raise
+
+                # Calculate total score using all scoring components
+                total_score = 0.0
+                total_weight = 0.0
+
+                for component in scoring_components:
+                    component_weight = component.get_weight()
+                    component_score = component.compute_score(context)
+                    total_score += component_weight * component_score
+                    total_weight += component_weight
+
+                # Normalize the score
+                if total_weight > 0.0:
+                    total_score /= total_weight
+            else:
+                # Legacy scoring method
+                # Use ray information to calculate quality score
+                ray_quality = 1.0 / (1.0 + raycast.relate_distance)
+                # Consider node weight
+                node_weight = raycast.weight
+                # Calculate total score considering distance, ray quality, and node weight
+                total_score = (
+                    distance_weight * basic_weight  # Distance-based score
+                    + ray_weight * ray_quality * node_weight  # Ray quality and node weight
+                ) / (distance_weight + ray_weight)  # Normalize
 
             # Add to candidates if score exceeds threshold
             if total_score >= min_weight_threshold:

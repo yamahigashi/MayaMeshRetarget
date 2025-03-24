@@ -1,41 +1,42 @@
-# -*- coding: utf-8 -*-
-"""
-Module for clustering vertices based on skin weights and topological adjacency.
-"""
+"""Module for clustering vertices based on skin weights and topological adjacency."""
+
 import collections
 
-import numpy as np
-from scipy.spatial import cKDTree
 from scipy.sparse import (
     lil_matrix,
 )
+from scipy.spatial import cKDTree
 
-from maya.api import (
-    OpenMaya as om,
-)
+import numpy as np
 from maya import (
     cmds,
     mel,
 )
+from maya.api import (
+    OpenMaya as om,
+)
 
 from . import util
+from .types import IntArray, MeshPath
 
 
 ##############################################################################
 # Cluster vertices across multiple meshes
 ##############################################################################
 @util.timeit
-def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cluster=6):
-    # type: (list[om.MDagPath|str], float, int) -> np.ndarray
-    """
-    Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
+def cluster_vertices_by_skin_weight(
+    mesh_paths: list[MeshPath], precision: int = 3, min_vertices_per_cluster: int = 6,
+) -> IntArray:
+    """Cluster vertices based on their weight similarity across multiple meshes using a custom distance function.
 
-    :param mesh_paths: A list of meshes to cluster
-    :param precision: The number of decimal places to round the skin weights (default: 3)
-    :param min_vertices_per_cluster: The minimum number of vertices required for a cluster (default: 6)
-    :return: A list of cluster labels for each vertex across all meshes
-    """
+    Args:
+        mesh_paths: A list of meshes to cluster
+        precision: The number of decimal places to round the skin weights (default: 3)
+        min_vertices_per_cluster: The minimum number of vertices required for a cluster (default: 6)
 
+    Returns:
+        Array of cluster labels for each vertex across all meshes
+    """
     # Initialize variables to hold combined data
     all_sparse_weights = []
     vertex_offsets = []
@@ -43,7 +44,6 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
 
     # Process each mesh and collect sparse weights
     for mesh_path in mesh_paths:
-
         try:
             sparse_weights = util.get_skin_weight_as_sparse_matrix(mesh_path)
         except ValueError:
@@ -65,14 +65,17 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
     current_vertex = 0
     for sparse_weights in all_sparse_weights:
         num_vertices = sparse_weights.shape[0]
-        combined_sparse_weights[current_vertex:current_vertex + num_vertices, :sparse_weights.shape[1]] = sparse_weights
+        combined_sparse_weights[current_vertex : current_vertex + num_vertices, : sparse_weights.shape[1]] = (
+            sparse_weights
+        )
         current_vertex += num_vertices
 
     # Convert to CSR format for efficient row operations
     csr_weights = combined_sparse_weights.tocsr()
 
     # Round the non-zero data to the specified precision
-    csr_weights.data = np.round(csr_weights.data, precision)
+    # Fix: ensure precision is an integer for np.round
+    csr_weights.data = np.around(csr_weights.data, int(precision))
 
     # Create a unique key for each vertex based on its non-zero indices and rounded weights
     # Use a hashable representation (tuple of indices and weights)
@@ -105,12 +108,12 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
         vertex_keys.append(key)
 
     # Map keys to vertex indices
-    key_to_vertices = collections.defaultdict(list)
+    key_to_vertices: collections.defaultdict[tuple, list[int]] = collections.defaultdict(list)
     for vertex_index, key in zip(vertex_indices, vertex_keys):
         key_to_vertices[key].append(vertex_index)
 
     # Initialize labels
-    labels = np.full(total_vertices, -1, dtype=int)
+    labels = np.full(total_vertices, -1, dtype=np.int_)
     cluster_id = 0
     for indices in key_to_vertices.values():
         if len(indices) > min_vertices_per_cluster:
@@ -121,14 +124,16 @@ def cluster_vertices_by_skin_weight(mesh_paths, precision=3, min_vertices_per_cl
 
 
 @util.timeit
-def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
-    # type: (list[om.MDagPath|str], np.ndarray, float) -> np.ndarray
-    """
-    Refine clusters by checking topological adjacency across multiple meshes.
+def refine_clusters_by_topology(mesh_paths: list[MeshPath], labels: IntArray, tolerance: float = 1e-6) -> IntArray:
+    """Refine clusters by checking topological adjacency across multiple meshes.
 
-    :param mesh_paths: A list of meshes for which to refine the clusters
-    :param labels: Initial cluster labels based on weight similarity
-    :return: Refined cluster labels taking topology into account
+    Args:
+        mesh_paths: A list of meshes for which to refine the clusters
+        labels: Initial cluster labels based on weight similarity
+        tolerance: Distance tolerance for considering vertices at the same position
+
+    Returns:
+        Refined cluster labels taking topology into account
     """
     total_vertices = labels.shape[0]
     adjacency_matrix = lil_matrix((total_vertices, total_vertices), dtype=bool)
@@ -157,7 +162,12 @@ def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
             vertex_iter.next()
 
         if not cmds.about(batch=True):
-            cmds.progressBar(bar, edit=True, step=num_vertices, status=f"Collecting to connectivities for {mesh_path}...")
+            cmds.progressBar(
+                bar,
+                edit=True,
+                step=num_vertices,
+                status=f"Collecting connectivities for {mesh_path}...",
+            )
 
         vertex_offset += num_vertices
 
@@ -176,12 +186,13 @@ def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
     visited = np.full(total_vertices, False)
 
     # Function to check if all neighbors of a vertex are within the same cluster
-    def is_fully_connected_within_cluster(vertex, current_cluster):
+    def is_fully_connected_within_cluster(vertex: int, current_cluster: int) -> bool:
         neighbors = adjacency_matrix[vertex].nonzero()[1]
-        return np.all(labels[neighbors] == current_cluster)
+        # Convert numpy.bool_ to Python bool for type compatibility
+        return bool(np.all(labels[neighbors] == current_cluster))
 
     # Function to perform breadth-first search (BFS) to find connected components
-    def bfs(start_vertex, current_cluster):
+    def bfs(start_vertex: int, current_cluster: int) -> tuple[list[int], bool]:
         queue = [start_vertex]
         cluster_vertices = []
         dissolve = False  # Flag to determine if the cluster should be dissolved
@@ -232,15 +243,15 @@ def refine_clusters_by_topology(mesh_paths, labels, tolerance=1e-6):
 
 
 @util.timeit
-def cluster_vertices(mesh_paths):
-    # type: (list[om.MDagPath|str]) -> np.ndarray
-    """
-    Cluster vertices across multiple meshes.
+def cluster_vertices(mesh_paths: list[MeshPath]) -> IntArray:
+    """Cluster vertices across multiple meshes.
 
-    :param mesh_paths: A list of meshes to cluster
-    :return: A list of cluster labels for each vertex across all meshes
-    """
+    Args:
+        mesh_paths: A list of meshes to cluster
 
+    Returns:
+        Array of cluster labels for each vertex across all meshes
+    """
     vertex_offset = 0
 
     for mesh_path in mesh_paths:
@@ -251,11 +262,11 @@ def cluster_vertices(mesh_paths):
     bar = mel.eval("$tmp = $gMainProgressBar")
     if not cmds.about(batch=True):
         cmds.progressBar(
-                bar,
-                edit=True,
-                beginProgress=True,
-                status="Clustering vertices...",
-                maxValue=vertex_offset * 4,
+            bar,
+            edit=True,
+            beginProgress=True,
+            status="Clustering vertices...",
+            maxValue=vertex_offset * 4,
         )
 
     labels = cluster_vertices_by_skin_weight(mesh_paths)

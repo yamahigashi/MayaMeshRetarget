@@ -1,0 +1,174 @@
+[project]
+name = "robust-retargeting-tool-for-maya"
+description = "A tool for retargeting meshes in Maya"
+version = "0.1.0"
+dependencies = [
+  "numpy",
+  "scipy",
+  "scikit-learn",
+  "embreex",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyright",
+  "refurb",
+  "ruff",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+indent-width = 4
+src = [
+  "python",
+  "stubs",
+]
+
+exclude = [
+  ".git",
+  ".venv",
+  "__pycache__",
+  "build",
+  "dist",
+  "migrations",
+  "docs",
+  "platforms",
+]
+
+
+[tool.ruff.lint]
+
+select = [
+  "E",   # pycodestyle エラー
+  "F",   # pyflakes
+  "W",   # pycodestyle 警告
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+  "N",   # pep8-naming
+  "SIM", # flake8-simplify
+  "TCH", # flake8-type-checking
+  "ARG", # flake8-unused-arguments
+  "RUF", # Ruff特有のルール
+  "D",   # pydocstyle
+  "C90",     # mccabe (循環的複雑度)
+  "B",       # flake8-bugbear (潜在バグ)
+  "S",       # flake8-bandit (セキュリティ)
+  "ANN",     # 型ヒントの推奨
+  "ASYNC",   # 非同期処理の推奨
+  "COM",     # 不要なカンマの整理
+]
+
+ignore = [
+  "D100",  # 公開モジュールのdocstringが必要
+  "D104",  # パッケージのdocstringが必要
+  "D202",  # No blank lines allowed after function docstring
+  "D203",  # クラスdocstringの前に1行空行が必要
+  "D213",  # マルチライン docstring の概要が1行目に必要
+  "D415",  # First line should end with a period
+  "ANN401",  # Dynamically typed expression in **kwargs
+  "N813",  # CamelCase import as lowercase
+  "RUF002",  # Docstring contains ambiguous word
+  "RUF003",
+  "E741",  # ambiguous variable name
+]
+
+fixable = ["ALL"]
+unfixable = []
+
+# インポート整理（isort）の設定
+[tool.ruff.lint.isort]
+known-first-party = ["ymt_mesh_retarget"]
+lines-after-imports = 2
+
+# pydocstyle の設定（Googleスタイル推奨）
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# mccabe の複雑度閾値
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+# pep8-naming の設定 (無視する名前の指定)
+[tool.ruff.lint.pep8-naming]
+ignore-names = [
+  "setUp",
+  "tearDown"
+]
+
+# per-file-ignores（特定ファイルでのみ一部ルールを無効化）
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+  "S101",
+  "D103",
+  "ANN201"
+]
+
+"__init__.py" = [
+  "F401"
+]
+
+"inpaint.py" = [
+  "N806",  # Variable in function should be lowercase
+]
+
+"ui.py" = [
+  "N802",  # Function name should be lowercase
+  "N803",  # Argument name should be lowercase
+  "N806",  # Variable in function should be lowercase
+]
+
+"geometry.py" = [
+  "S311",  # standard pseudo-random number generator
+  "N806",  # Variable in function should be lowercase
+]
+
+# pyupgrade の設定（ターゲットPythonバージョン指定）
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = false
+
+
+[tool.pylint."FORMAT"]
+max-line-length=120
+[tool.pylint."MASTER"]
+init-hook='import sys;import os;from pylint.config import find_default_config_files;[sys.path.append(p) for p in os.getenv("PYTHONPATH").split(";")];[sys.path.append(os.path.join(os.path.dirname(p), "python") for p in find_default_config_files()];sys.path.append(os.path.join(os.path.dirname(p), "stubs") for p in find_default_config_files()'
+
+[tool.pylint."MESSAGES CONTROL"]
+disable=[
+  "consider-using-f-string",
+  "invalid-name",
+  "missing-function-docstring",
+  "import-outside-toplevel",
+  "consider-using-from-import",
+  "wrong-import-order",
+]
+
+
+[tool.pyright]
+extraPaths = [
+  "python",
+  "vendor_python",
+  "stubs",
+  "lib",
+  "src",
+]
+exclude = [
+  ".git",
+  ".venv",
+  "__pycache__",
+  "build",
+  "dist",
+  "migrations",
+  "docs",
+  "platforms",
+]
+reportUnusedImport = false
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportMissingModuleSource = false
+reportTypeCommentUsage = false
+pythonVersion = "3.9"
+pythonPlatform = "Windows"
+typeCheckingMode = "basic"

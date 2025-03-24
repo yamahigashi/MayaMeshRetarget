@@ -1,39 +1,63 @@
-# -*- coding: utf-8 -*-
-"""
-Module for inpainting unconvinced distances between two meshes calculated by
-RBF kernel using Laplacian matrix.
+"""Module for inpainting unconvinced distances between two meshes
+
+calculated by RBF kernel using Laplacian matrix.
 """
 
-import numpy as np
-from scipy.spatial import cKDTree
+from typing import TYPE_CHECKING, Any, Union, cast
+
 from scipy.sparse import (
-    lil_matrix,
-    csr_matrix,
-    dia_matrix,  # noqa: F401
     block_diag as spblock_diag,
+)
+from scipy.sparse import (
+    csr_matrix,
+    dia_matrix,
+    lil_matrix,
+)
+from scipy.sparse import (
     diags as spdiags,
+)
+from scipy.sparse import (
     linalg as splinalg,
 )
+from scipy.spatial import cKDTree
 
+
+# For compatibility with different SciPy versions
+if TYPE_CHECKING:
+    try:
+        from scipy.sparse import dia_array
+    except ImportError:
+        dia_array = dia_matrix  # type: ignore
+
+import numpy as np
 from maya.api import (
     OpenMaya as om,
 )
 
 from . import util
+from .types import FloatArray, IntArray, MeshPath, to_ndarray
 
 
 ##############################################################################
 # Distance Inpainting
 ##############################################################################
 def segregate_vertices_by_confidence(
-        src_path,
-        dst_paths,
-        threshold_dist_coefficient=0.1,
-        threshold_angle=180.0,
-):
-    # type: (om.MDagPath, list[om.MDagPath]|om.MDagPath, float, float) -> tuple[np.ndarray, np.ndarray]
-    """segregate vertices by confidence."""
+    src_path: MeshPath,
+    dst_paths: Union[list[MeshPath], MeshPath],
+    threshold_dist_coefficient: float = 0.1,
+    threshold_angle: float = 180.0,
+) -> tuple[IntArray, IntArray]:
+    """Segregate vertices by confidence.
 
+    Args:
+        src_path: Source mesh path
+        dst_paths: Target mesh path(s)
+        threshold_dist_coefficient: Distance threshold coefficient
+        threshold_angle: Angle threshold in degrees
+
+    Returns:
+        Tuple containing confident vertex indices and unconvinced vertex indices
+    """
     if not isinstance(dst_paths, list):
         dst_paths = [dst_paths]
 
@@ -42,23 +66,32 @@ def segregate_vertices_by_confidence(
     closest_points_data = __get_closest_points_by_kdtree(src_path, target_vertex_data)
 
     confident_vertex_indices = __filter_high_confidence_matches(
-            target_vertex_data,
-            closest_points_data,
-            threshold_distance,
-            threshold_angle)
+        target_vertex_data,
+        closest_points_data,
+        threshold_distance,
+        threshold_angle,
+    )
 
-    unconvinced_vertex_indices = np.setdiff1d(
-            np.arange(target_vertex_data.shape[0]),
-            confident_vertex_indices)
+    unconvinced_vertex_indices = np.setdiff1d(np.arange(target_vertex_data.shape[0]), confident_vertex_indices)
 
     return confident_vertex_indices, unconvinced_vertex_indices
 
 
 @util.timeit
-def __inpaint_distance_matrix(mesh_paths, D, known_indices, unknown_indices):
-    # type: (list[om.MDagPath], np.ndarray, np.ndarray, np.ndarray) -> np.ndarray
-    """apply inpainting for indices."""
+def __inpaint_distance_matrix(
+    mesh_paths: list[MeshPath], D: FloatArray, known_indices: IntArray, unknown_indices: IntArray, # noqa: N803
+) -> FloatArray:
+    """Apply inpainting for indices.
 
+    Args:
+        mesh_paths: List of mesh paths
+        D: Distance matrix
+        known_indices: Indices with known values
+        unknown_indices: Indices with unknown values that need inpainting
+
+    Returns:
+        Updated distance matrix with inpainted values
+    """
     all_L = []
     all_M = []
 
@@ -74,11 +107,15 @@ def __inpaint_distance_matrix(mesh_paths, D, known_indices, unknown_indices):
 
     Q = -L + L @ spdiags(np.reciprocal(M_diag)) @ L
 
+    # Convert to CSR for indexing compatibility
+    Q_csr = csr_matrix(Q)
+
     S_match = known_indices
     S_nomatch = unknown_indices
 
-    Q_UU = csr_matrix(Q[np.ix_(S_nomatch, S_nomatch)])
-    Q_UI = csr_matrix(Q[np.ix_(S_nomatch, S_match)])
+    # Use CSR matrix for indexing to avoid compatibility issues
+    Q_UU = csr_matrix(Q_csr[np.ix_(S_nomatch, S_nomatch)])
+    Q_UI = csr_matrix(Q_csr[np.ix_(S_nomatch, S_match)])
 
     rank = np.linalg.matrix_rank(Q_UU.toarray())
     if rank < Q_UU.shape[0]:
@@ -99,42 +136,50 @@ def __inpaint_distance_matrix(mesh_paths, D, known_indices, unknown_indices):
     return D
 
 
-def __create_vertex_data_array(mesh_paths):
-    # type: (list[om.MDagPath]) -> np.ndarray
-    """Create a structured numpy array containing vertex index, position, and normal."""
+def __create_vertex_data_array(mesh_paths: list[MeshPath]) -> np.ndarray:
+    """Create a structured numpy array containing vertex index, position, and normal.
 
+    Args:
+        mesh_paths: List of mesh paths
+
+    Returns:
+        Structured array with vertex data
+    """
     all_vertex_data = []
 
     for path in mesh_paths:
         mesh = util.get_mesh_fn(path)
 
         vertex_data = np.zeros(
-                mesh.numVertices,
-                dtype=[
-                    ("index", np.int64),
-                    ("position", np.float64, 3),
-                    ("normal", np.float64, 3),
-                    ("face_index", np.int64),
-                ])
-     
+            mesh.numVertices,
+            dtype=[
+                ("index", np.int64),
+                ("position", np.float64, 3),
+                ("normal", np.float64, 3),
+                ("face_index", np.int64),
+            ],
+        )
+
         for i in range(mesh.numVertices):
-            position = mesh.getPoint(i, om.MSpace.kWorld)  # type: ignore
-            normal = mesh.getVertexNormal(i, om.MSpace.kWorld)  # type: ignore
-            vertex_data[i] = (
-                    i,
-                    [position.x, position.y, position.z],
-                    [normal.x, normal.y, normal.z],
-                    -1)
+            position = mesh.getPoint(i, om.MSpace.kWorld)
+            normal = mesh.getVertexNormal(i, om.MSpace.kWorld)
+            vertex_data[i] = (i, [position.x, position.y, position.z], [normal.x, normal.y, normal.z], -1)
 
         all_vertex_data.append(vertex_data)
 
     return np.concatenate(all_vertex_data)
 
 
-def __get_closest_points_by_kdtree(source_path, target_vertex_data):
-    # type: (om.MDagPath, np.ndarray) -> np.ndarray
-    """get closest points and return a structured numpy array similar to target_vertex_data."""
+def __get_closest_points_by_kdtree(source_path: MeshPath, target_vertex_data: np.ndarray) -> np.ndarray:
+    """Get closest points and return a structured numpy array similar to target_vertex_data.
 
+    Args:
+        source_path: Source mesh path
+        target_vertex_data: Target vertex structured array
+
+    Returns:
+        Closest points data as structured array
+    """
     source_vertex_data = __create_vertex_data_array([source_path])
     B_positions = np.array([vertex["position"] for vertex in source_vertex_data])
     A_positions = np.array([vertex["position"] for vertex in target_vertex_data])
@@ -146,10 +191,20 @@ def __get_closest_points_by_kdtree(source_path, target_vertex_data):
     return nearest_in_B_for_A
 
 
-def __filter_high_confidence_matches(target_vertex_data, closest_points_data, max_distance, max_angle):
-    # type: (np.ndarray, np.ndarray, float, float) -> np.ndarray
-    """filter high confidence matches using structured arrays."""
+def __filter_high_confidence_matches(
+    target_vertex_data: np.ndarray, closest_points_data: np.ndarray, max_distance: float, max_angle: float,
+) -> IntArray:
+    """Filter high confidence matches using structured arrays.
 
+    Args:
+        target_vertex_data: Target vertex structured array
+        closest_points_data: Closest points structured array
+        max_distance: Maximum distance threshold
+        max_angle: Maximum angle threshold in degrees
+
+    Returns:
+        Array of indices for high confidence matches
+    """
     target_positions = target_vertex_data["position"]
     target_normals = target_vertex_data["normal"]
     source_positions = closest_points_data["position"]
@@ -170,13 +225,16 @@ def __filter_high_confidence_matches(target_vertex_data, closest_points_data, ma
     return high_confidence_indices
 
 
-def __add_laplacian_entry_in_place(L, tri_positions, tri_indices):
-    # type: (lil_matrix, np.ndarray, np.ndarray) -> None
-    """add laplacian entry.
+def __add_laplacian_entry_in_place(L: lil_matrix, tri_positions: list[om.MPoint], tri_indices: list[int]) -> None:  # noqa: N803
+    """Add laplacian entry.
 
     CAUTION: L is modified in-place.
-    """
 
+    Args:
+        L: Laplacian matrix to be updated in place
+        tri_positions: Triangle positions as list of MPoints
+        tri_indices: Triangle vertex indices
+    """
     i1 = tri_indices[0]
     i2 = tri_indices[1]
     i3 = tri_indices[2]
@@ -191,45 +249,52 @@ def __add_laplacian_entry_in_place(L, tri_positions, tri_indices):
     cotan3 = __compute_cotangent(v1, v3, v2)
 
     # update laplacian matrix
-    L[i1, i2] += cotan1  # type: ignore
-    L[i2, i1] += cotan1  # type: ignore
-    L[i1, i1] -= cotan1  # type: ignore
-    L[i2, i2] -= cotan1  # type: ignore
+    L[i1, i2] += cotan1
+    L[i2, i1] += cotan1
+    L[i1, i1] -= cotan1
+    L[i2, i2] -= cotan1
 
-    L[i2, i3] += cotan2  # type: ignore
-    L[i3, i2] += cotan2  # type: ignore
-    L[i2, i2] -= cotan2  # type: ignore
-    L[i3, i3] -= cotan2  # type: ignore
+    L[i2, i3] += cotan2
+    L[i3, i2] += cotan2
+    L[i2, i2] -= cotan2
+    L[i3, i3] -= cotan2
 
-    L[i1, i3] += cotan3  # type: ignore
-    L[i3, i1] += cotan3  # type: ignore
-    L[i1, i1] -= cotan3  # type: ignore
-    L[i3, i3] -= cotan3  # type: ignore
+    L[i1, i3] += cotan3
+    L[i3, i1] += cotan3
+    L[i1, i1] -= cotan3
+    L[i3, i3] -= cotan3
 
 
-def __add_area_in_place(areas, tri_positions, tri_indices):
-    # type: (np.ndarray, np.ndarray, np.ndarray) -> None
-    """add area.
+def __add_area_in_place(areas: np.ndarray, tri_positions: list[om.MPoint], tri_indices: list[int]) -> None:
+    """Add area.
 
     CAUTION: areas is modified in-place.
-    """
 
-    v1 = tri_positions[0]
-    v2 = tri_positions[1]
-    v3 = tri_positions[2]
+    Args:
+        areas: Array of area values to be updated in place
+        tri_positions: Triangle positions as list of MPoints
+        tri_indices: Triangle vertex indices
+    """
+    v1 = to_ndarray(tri_positions[0])
+    v2 = to_ndarray(tri_positions[1])
+    v3 = to_ndarray(tri_positions[2])
     area = 0.5 * np.linalg.norm(np.cross(v2 - v1, v3 - v1))
 
     for idx in tri_indices:
         areas[idx] += area
 
 
-def __compute_laplacian_and_mass_matrix(mesh):
-    # type: (om.MFnMesh) -> tuple[csr_matrix, dia_matrix]
-    """compute laplacian matrix from mesh.
+def __compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[csr_matrix, Any]:  # Return Any for compatibility
+    """Compute laplacian matrix from mesh.
 
-    treat area as mass matrix.
+    Treat area as mass matrix.
+
+    Args:
+        mesh: Maya mesh function set
+
+    Returns:
+        Tuple containing Laplacian matrix and mass matrix
     """
-
     # initialize sparse laplacian matrix
     n_vertices = mesh.numVertices
     L = lil_matrix((n_vertices, n_vertices))
@@ -238,11 +303,9 @@ def __compute_laplacian_and_mass_matrix(mesh):
     # for each edge and face, calculate the laplacian entry and area
     face_iter = om.MItMeshPolygon(mesh.dagPath())
     while not face_iter.isDone():
-
         n_tri = face_iter.numTriangles()
 
         for j in range(n_tri):
-
             tri_positions, tri_indices = face_iter.getTriangle(j)
             __add_laplacian_entry_in_place(L, tri_positions, tri_indices)
             __add_area_in_place(areas, tri_positions, tri_indices)
@@ -252,13 +315,21 @@ def __compute_laplacian_and_mass_matrix(mesh):
     L_csr = L.tocsr()
     M_csr = spdiags(areas)
 
-    return L_csr, M_csr
+    # Using Any for compatibility between dia_matrix and dia_array
+    return L_csr, cast("Any", M_csr)
 
 
-def __compute_cotangent(v1, v2, v3):
-    # type: (om.MPoint, om.MPoint, om.MPoint) -> float
-    """compute cotangent from three points."""
+def __compute_cotangent(v1: om.MPoint, v2: om.MPoint, v3: om.MPoint) -> float:
+    """Compute cotangent from three points.
 
+    Args:
+        v1: First point
+        v2: Second point
+        v3: Third point
+
+    Returns:
+        Cotangent value
+    """
     edeg1 = v2 - v1
     edeg2 = v3 - v1
 
@@ -275,31 +346,34 @@ def __compute_cotangent(v1, v2, v3):
 
 @util.timeit
 def inpaint_distance(
-        source_path,
-        target_paths,
-        distances,
-        labels,
-        threshold_dist_coefficient=0.1,
-        threshold_angle=180.0,
-):
-    # type: (om.MDagPath, list[om.MDagPath], np.ndarray, np.ndarray, float, float) -> None
+    source_path: MeshPath,
+    target_paths: list[MeshPath],
+    distances: FloatArray,
+    labels: IntArray,
+    threshold_dist_coefficient: float = 0.1,
+    threshold_angle: float = 180.0,
+) -> FloatArray:
     """Inpaint the distance matrix for unconvinced vertices.
-    
+
     This function fills in the distances for vertices that were not confidently matched and
     were marked as isolated or part of a cluster. The inpainting process uses the known
     distances from confident matches to estimate the distances for the unconvinced vertices.
 
-    :param source_path: The source mesh DAG path
-    :param target_paths: The target mesh DAG paths
-    :param distances: The distance matrix between source and target vertices
-    :param labels: The cluster labels for each vertex
-    :param threshold_distance: The threshold distance for confident matches
-    :param threshold_angle: The threshold angle for confident matches
-    """
+    Args:
+        source_path: The source mesh DAG path
+        target_paths: The target mesh DAG paths
+        distances: The distance matrix between source and target vertices
+        labels: The cluster labels for each vertex
+        threshold_dist_coefficient: The distance coefficient for threshold calculation
+        threshold_angle: The threshold angle for confident matches in degrees
 
+    Returns:
+        Updated distance matrix
+    """
     # Segregate vertices based on confidence and inpaint distances
-    tmp = segregate_vertices_by_confidence(source_path, target_paths, threshold_dist_coefficient, threshold_angle)
-    confident_indices, unconvinced_indices = tmp
+    confident_indices, unconvinced_indices = segregate_vertices_by_confidence(
+        source_path, target_paths, threshold_dist_coefficient, threshold_angle,
+    )
 
     # TODO: Rigid transformation for unconvinced vertices
     # # Inpaint distances for unconvinced vertices
@@ -309,7 +383,7 @@ def inpaint_distance(
     #             distances,
     #             confident_indices,
     #             unconvinced_indices)
-    # 
+    #
     # return distances
 
     all_indices = np.arange(distances.shape[0])
@@ -319,27 +393,34 @@ def inpaint_distance(
     unconvinced_iso_indices = np.intersect1d(unconvinced_indices, isolated_indices)
     confident_all_indices = np.setdiff1d(all_indices, unconvinced_iso_indices)
     if len(unconvinced_indices) > 0:
-        distances = __inpaint_distance_matrix(
-                target_paths,
-                distances,
-                confident_all_indices,
-                unconvinced_iso_indices)
+        distances = __inpaint_distance_matrix(target_paths, distances, confident_all_indices, unconvinced_iso_indices)
 
     return distances
 
 
-def select_inpaint_area(src_path, dst_paths, threshold_distance=0.1, threshold_angle=180.0):
-    # type: (om.MDagPath, list[om.MDagPath]|om.MDagPath, float, float) -> None
-    """Select vertices to inpaint."""
+def select_inpaint_area(
+    src_path: MeshPath,
+    dst_paths: Union[list[MeshPath], MeshPath],
+    threshold_distance: float = 0.1,
+    threshold_angle: float = 180.0,
+) -> None:
+    """Select vertices to inpaint.
 
+    Args:
+        src_path: Source mesh path
+        dst_paths: Target mesh path(s)
+        threshold_distance: Distance threshold coefficient
+        threshold_angle: Angle threshold in degrees
+    """
     if not isinstance(dst_paths, list):
         dst_paths = [dst_paths]
 
     confident_vertex_indices, unconvinced_vertex_indices = segregate_vertices_by_confidence(
-            src_path,
-            dst_paths,
-            threshold_distance,
-            threshold_angle)
+        src_path,
+        dst_paths,
+        threshold_distance,
+        threshold_angle,
+    )
     print(f"Confident: {len(confident_vertex_indices)}")
     print(f"Unconvinced: {len(unconvinced_vertex_indices)}")
 

@@ -3,6 +3,7 @@
 
 from typing import Optional
 
+import numpy as np
 from Qt.QtCore import (
     QAbstractAnimation,
     QParallelAnimationGroup,
@@ -11,7 +12,7 @@ from Qt.QtCore import (
     Qt,
     Signal,
 )
-from Qt.QtWidgets import (  # type: ignore
+from Qt.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QButtonGroup,
@@ -314,6 +315,10 @@ class ClickableLineEdit(QLineEdit):
 
 class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
     """Main UI window for the mesh retargeting tool."""
+
+    src_points: Optional[np.ndarray]
+    dst_points: Optional[np.ndarray]
+
     def __init__(
         self,
         parent: QWidget = None,
@@ -330,6 +335,9 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         """Initialize the main UI window for the mesh retargeting tool."""
 
         super().__init__(parent)
+
+        self.src_points = None
+        self.dst_points = None
 
         self.initUI()
         if src:
@@ -411,8 +419,33 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         self.ret_list_widget.itemClicked.connect(self.selectRetargetObject)
 
         # -----------------------------------------------
+        # Registration settings
+        self.registration_settings_group_box = QGroupBox("Registration Settings", self)
+
+        self.registration_sample_count_slider = IntSlider(
+                "Vertex Count:",
+                minimum=100,
+                maximum=10000,
+                interval=50,
+                initial_value=1500)
+        self.registration_sample_ray_slider = IntSlider(
+                "Ray Count:",
+                minimum=1,
+                maximum=128,
+                interval=1,
+                initial_value=16)
+        self.registration_sample_angle_slider = FloatSlider(
+                "Cone Angle:",
+                minimum=1.0,
+                maximum=360.0,
+                interval=1.0,
+                initial_value=25.0)
+        self.visualize_registration_button = QPushButton("Visualize Registration", self)
+        self.visualize_registration_button.clicked.connect(self.visualizeRegistration)
+
+        # -----------------------------------------------
         # search settings
-        self.settings_group_box = QGroupBox("Settings", self)
+        self.settings_group_box = QGroupBox("Retarget Settings", self)
 
         self.rigid_mode_label = QLabel("Maintain Rigid:", self)
         self.rigid_mode_label.setAlignment(Qt.AlignRight)
@@ -531,6 +564,23 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         # self.hierarchy_on = QRadioButton("On", self)
         # self.hierarchy_on.setChecked(True)
         # self.hierarchy_off = QRadioButton("Off", self)
+        # -----------------------------------------------
+
+        # Registration settings layout
+        registration_sample_count_layout = QHBoxLayout()
+        registration_sample_count_layout.addWidget(self.registration_sample_count_slider)
+        registration_sample_ray_layout = QHBoxLayout()
+        registration_sample_ray_layout.addWidget(self.registration_sample_ray_slider)
+        registration_sample_angle_layout = QHBoxLayout()
+        registration_sample_angle_layout.addWidget(self.registration_sample_angle_slider)
+        visualize_registration_button_layout = QHBoxLayout()
+        visualize_registration_button_layout.addWidget(self.visualize_registration_button)
+        registration_setting_layout = QVBoxLayout()
+        registration_setting_layout.addLayout(registration_sample_count_layout)
+        registration_setting_layout.addLayout(registration_sample_ray_layout)
+        registration_setting_layout.addLayout(registration_sample_angle_layout)
+        registration_setting_layout.addLayout(visualize_registration_button_layout)
+        self.registration_settings_group_box.setLayout(registration_setting_layout)
 
         # -----------------------------------------------
         rigid_mode_layout = QHBoxLayout()
@@ -555,6 +605,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         search_group_box_layout.addLayout(inpaint_onoff_layout)
         search_group_box_layout.addLayout(stride_layout)
         self.settings_group_box.setLayout(search_group_box_layout)
+        # -----------------------------------------------
 
         inpaint_mode_layout = QHBoxLayout()
         inpaint_mode_layout.addWidget(self.inpaint_mode_label)
@@ -596,6 +647,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         # Main layout
         main_layout = QVBoxLayout()
         main_layout.addWidget(self.meshes_group_box)
+        main_layout.addWidget(self.registration_settings_group_box)
         main_layout.addWidget(self.settings_group_box)
         main_layout.addWidget(self.inpaint_settings_group_box)
         main_layout.addWidget(self.utility_group_box)
@@ -614,10 +666,14 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
     def setObject(self) -> None:
         # type: () -> None
         """Insert text into the line edit."""
+
         selection = cmds.ls(sl=True, objectsOnly=True)
         if not selection:
             cmds.warning("Nothing is selected")
             return
+
+        self.src_points = None
+        self.dst_points = None
 
         sel = selection[0]
 
@@ -636,6 +692,9 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         isReady = self.checkToExecute()
         self.execute_button.setEnabled(isReady)
+
+        need_registration = self.needToRegistration()
+        self.registration_settings_group_box.setEnabled(need_registration)
 
     def selectSourceObject(self) -> None:
         # type: () -> None
@@ -720,6 +779,32 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         """Clear internal data. Empty implementation for now."""
         pass
 
+    def visualizeRegistration(self) -> None:
+        """Visualize the registration of the source and target objects."""
+        from . import registration
+
+        src = self.src_line_edit.text()
+        dst = self.dst_line_edit.text()
+        sample_count = self.registration_sample_count_slider.value()
+        ray_count = self.registration_sample_ray_slider.value()
+        cone_angle = self.registration_sample_angle_slider.value()
+
+        src, dst = registration.find_correspondence_pairs(
+            src,
+            dst,
+            sample_count=sample_count,
+            sample_number=ray_count,
+            sample_degree=cone_angle,
+            visualize=True,
+        )
+
+        if src is not None and dst is not None:
+            self.src_points = src
+            self.dst_points = dst
+
+        isReady = self.checkToExecute()
+        self.execute_button.setEnabled(isReady)
+
     def hasMesh(self, mesh: str) -> bool:
         # type: (str) -> bool
         """Check if the mesh exists in the scene."""
@@ -803,14 +888,29 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         if self.ret_list_widget.count() == 0:
             return False
 
-        # check vertex count
+        if self.needToRegistration():  # noqa: SIM102
+            if self.src_points is None or self.dst_points is None:
+                logger.info("Source and target points are not set.")
+                return False
+
+        return True
+
+    def needToRegistration(self) -> bool:
+        # type: () -> bool
+        """Check if the tool needs to register the source and target objects."""
+        if not self.src_line_edit.text():
+            return False
+
+        if not self.dst_line_edit.text():
+            return False
+
         src_vertex_count = cmds.polyEvaluate(self.src_line_edit.text(), vertex=True)
         dst_vertex_count = cmds.polyEvaluate(self.dst_line_edit.text(), vertex=True)
         if src_vertex_count != dst_vertex_count:
-            cmds.warning("Source and target objects have different vertex counts.")
-            return False
+            logger.info("Source and target objects have different vertex counts.")
+            return True
 
-        return True
+        return False
 
     def executeButtonClicked(self) -> None:
         # type: () -> None
@@ -827,6 +927,31 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         sampling_stride = 10
         apply_rigid_transform = self.rigid_on.isChecked()
         inpaint = self.inpaint_on.isChecked()
+
+        if self.needToRegistration():
+            from . import registration
+            sample_count = self.registration_sample_count_slider.value()
+            ray_count = self.registration_sample_ray_slider.value()
+            cone_angle = self.registration_sample_angle_slider.value()
+
+            if self.src_points is None or self.dst_points is None:
+                src, dst = registration.find_correspondence_pairs(
+                    src,
+                    dst,
+                    sample_count=sample_count,
+                    sample_number=ray_count,
+                    sample_degree=cone_angle,
+                    visualize=False,
+                )
+
+                if src is not None and dst is not None:
+                    self.src_points = src
+                    self.dst_points = dst
+                else:
+                    raise ValueError("Failed to find correspondence pairs.")
+
+            src = self.src_points
+            dst = self.dst_points
 
         objects = logic.retarget(
             source=src,

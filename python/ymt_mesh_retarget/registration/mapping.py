@@ -327,7 +327,6 @@ def create_optimized_correspondence_points(
                         {
                             "source_index": src_vtx_id,
                             "target_index": tar_vtx_id,
-                            "weight": basic_weight,  # Keep original weight calculation
                             "score": total_score,  # Total score for sorting
                             "triangle_index": triangle_idx,
                         },
@@ -359,7 +358,7 @@ def create_optimized_correspondence_points(
             correspondence_point = CorrespondencePoint(
                 source_index=candidate["source_index"],
                 target_index=target_idx,
-                weight=candidate["weight"],
+                score=candidate["score"],
             )
             optimized_correspondence_points.append(correspondence_point)
 

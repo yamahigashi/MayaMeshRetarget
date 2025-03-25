@@ -73,6 +73,7 @@ ignore = [
   "RUF002",  # Docstring contains ambiguous word
   "RUF003",
   "E741",  # ambiguous variable name
+  "SIM103",
 ]
 
 fixable = ["ALL"]

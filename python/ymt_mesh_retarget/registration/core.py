@@ -55,12 +55,12 @@ class CorrespondencePoint:
     Attributes:
         source_index: Vertex index in source mesh
         target_index: Vertex index in target mesh
-        weight: Weight (confidence) of the correspondence point, between 0.0 and 1.0
+        score: Score (confidence) of the correspondence point, between 0.0 and 1.0
     """
 
     source_index: VertexIndex  # Vertex index in source mesh
     target_index: VertexIndex  # Vertex index in target mesh
-    weight: float = 1.0  # Weight (confidence) of the correspondence point
+    score: float = 1.0  # Score (confidence) of the correspondence point
 
     def __post_init__(self) -> None:
         """Validate data after initialization."""
@@ -69,9 +69,10 @@ class CorrespondencePoint:
         #     raise ValueError(f"Invalid source_index: {self.source_index}. Must be a non-negative integer.")
         # if not isinstance(self.target_index, int) or self.target_index < 0:
         #     raise ValueError(f"Invalid target_index: {self.target_index}. Must be a non-negative integer.")
-        if not 0.0 <= self.weight <= 1.0:
-            # Clamp weight to valid range
-            self.weight = max(0.0, min(1.0, self.weight))
+        # if not 0.0 <= self.weight <= 1.0:
+        #     # Clamp weight to valid range
+        #     self.weight = max(0.0, min(1.0, self.weight))
+        ...
 
 
 @dataclass
@@ -419,10 +420,10 @@ class RegistrationOptions:
 
     sample_count: int = 3000
     sample_number: int = 16
-    sample_degree: float = 45.0
+    sample_degree: float = 25.0
     weight_decay: float = 2.0
     align_spaces: bool = True
-    max_points_per_target: int = 3
+    max_points_per_target: int = 1
     min_weight_threshold: float = 0.01
     distance_weight: float = 1.0
     ray_weight: float = 0.5

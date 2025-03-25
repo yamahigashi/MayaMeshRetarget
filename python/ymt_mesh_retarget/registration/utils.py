@@ -76,7 +76,10 @@ def find_root_joints(joint_paths: typing.Union[list[om.MDagPath], list[JointNode
     for _i, path in enumerate(joint_paths):
         if isinstance(path, JointNode):
             pp = path.path
-            path = pp if pp is not None else om.MDagPath.getAPathTo(path.detail_name)
+            if pp is not None:
+                path = pp
+            else:
+                path = om.MDagPath.getAPathTo(path.detail_name)
 
         if path.length() == 1 or cmds.listRelatives(path.fullPathName(), parent=True, type="joint") is None:
             root_joints.append(path)

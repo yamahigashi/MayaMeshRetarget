@@ -3,7 +3,6 @@
 This module provides functions for raycasting operations using Embree or fallback methods.
 """
 
-import logging
 import random
 import typing
 from typing import Any, Optional
@@ -23,6 +22,7 @@ except ImportError:
     EMBREE_AVAILABLE = False
     cmds.warning("embreex library not found. Using standard raycasting instead.")
 
+from ..logger import logger
 from ..util import timeit
 from . import geometry
 from .core import RaycastResult, RegistrationOptions, Vector3
@@ -36,10 +36,6 @@ if typing.TYPE_CHECKING:
         JointNode,
         MappingResult,
     )
-
-# Set up logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class RaycastEngine:
@@ -419,8 +415,8 @@ def perform_raycast(
     """
     # Validate inputs
     if not EMBREE_AVAILABLE and not force_standard_raycast:
-        logger.warning("Embree library is not available. Using standard raycasting.")
-        force_standard_raycast = True
+        logger.error("Embree library is not available. Using standard raycasting.")
+        raise ImportError("Embree library is not available")
 
     # Create joint mapping from source to target
     src_indices, tar_indices, _names = get_matched_info(src_joint_group, tar_joint_group)
@@ -498,6 +494,7 @@ def perform_raycast(
     random.seed(seed)
     sample_vertex_count = min(sample_vertex_count, len(src_mapping_points))
     source_vertex_indices = random.sample(range(len(src_mapping_points)), sample_vertex_count)
+    logger.debug(f"Using random sample of {len(source_vertex_indices)} source vertices")
 
     # Process each source vertex
     for current_vert, mapping_result in enumerate(src_mapping_points):
@@ -510,26 +507,26 @@ def perform_raycast(
 
         # Skip if no mapping points
         if not mapping_result.node_array:
+            # means no skinning weights for this vertex
             continue
 
         vertex_idx = mapping_result.vertex_index
         vertex_pos = src_mesh.get_points()[vertex_idx]
-        flag = vertex_idx == 1929
-        if flag:
-            print(f"vertex_idx: {vertex_idx}, vertex_pos: {vertex_pos}")
+
+        flag = vertex_idx == 2
 
         # Process each mapping point
-        for current_node in mapping_result.node_array:
+        for current_bone in mapping_result.node_array:
             # Get current bone index and weight
-            current_src_bone_index = current_node.bone_index
-            current_node_weight = current_node.weight
+            current_bone_index = current_bone.bone_index
+            current_bone_weight = current_bone.weight
 
             # Skip if weight is very small
-            if current_node_weight < 0.001:
+            if current_bone_weight < 0.001:
                 continue
 
             # Get vector from mapping point to vertex
-            current_src_p = current_node.point
+            current_src_p = current_bone.point
             current_src_pv = vertex_pos - current_src_p
 
             # Normalize direction vector
@@ -539,8 +536,8 @@ def perform_raycast(
             current_src_normal_pv = current_src_pv / current_src_pv_norm
 
             # Get source bone information
-            src_start_joint_index = src_bone_group[current_src_bone_index].start_joint_index
-            src_end_joint_index = src_bone_group[current_src_bone_index].end_joint_index
+            src_start_joint_index = src_bone_group[current_bone_index].start_joint_index
+            src_end_joint_index = src_bone_group[current_bone_index].end_joint_index
 
             current_src_bone_start_point = src_joint_group[src_start_joint_index].position
             current_src_bone_end_point = src_joint_group[src_end_joint_index].position
@@ -557,10 +554,19 @@ def perform_raycast(
             tar_end_joint_index   = src2tar_map[src_end_joint_index]
             if tar_start_joint_index < 0 or tar_end_joint_index < 0:
                 continue
+            if flag:
+                print(f"src_start_joint_index: {src_start_joint_index}, src_end_joint_index: {src_end_joint_index}")
+                print(f"tar_start_joint_index: {tar_start_joint_index}, tar_end_joint_index: {tar_end_joint_index}")
 
             current_tar_bone_start_point = tar_joint_group[tar_start_joint_index].position
             current_tar_bone_end_point = tar_joint_group[tar_end_joint_index].position
             current_tar_bone_v = current_tar_bone_end_point - current_tar_bone_start_point
+            if flag:
+                print(f"current_tar_bone_start_point: {current_tar_bone_start_point}")
+                print(f"current_tar_bone_end_point: {current_tar_bone_end_point}")
+                print(f"current_tar_bone_v: {current_tar_bone_v}")
+                print(f"start joint name: {tar_joint_group[tar_start_joint_index].detail_name}")
+                print(f"end joint name: {tar_joint_group[tar_end_joint_index].detail_name}")
 
             # Calculate corresponding point on target bone
             p = current_tar_bone_start_point + current_tar_bone_v * src_distance
@@ -571,12 +577,13 @@ def perform_raycast(
 
             # Generate sample directions
             sample_directions = geometry.rand_cone_vector(d, sample_degree, sample_number, seed)
-            if flag:
-                print(f"sample_directions: {sample_directions}")
 
             # Cast rays in batches
             n_rays = len(sample_directions)
             n_batches = (n_rays + batch_size - 1) // batch_size
+            if flag:
+                print(f"n_rays: {n_rays}, n_batches: {n_batches}")
+                print(f"sample_directions: {sample_directions}")
 
             for batch_idx in range(n_batches):
                 start_idx = batch_idx * batch_size
@@ -588,11 +595,17 @@ def perform_raycast(
                 ray_directions[:current_batch_size] = sample_directions[start_idx:end_idx]
                 ray_data["vertex_idx"][:current_batch_size] = current_vert
                 ray_data["from_point"][:current_batch_size] = p
-                ray_data["node_weight"][:current_batch_size] = current_node_weight
+                ray_data["node_weight"][:current_batch_size] = current_bone_weight
                 ray_data["target_distance"][:current_batch_size] = current_src_pv_norm
+                if flag:
+                    print(f"ray_origins: {ray_origins[:current_batch_size]}, ray_directions: {ray_directions[:current_batch_size]}")
+                    print(f"ray_data: {ray_data[:current_batch_size]}")
+                    print(f"current_vert: {current_vert}, current_bone_index: {current_bone_index}, current_bone_weight: {current_bone_weight}")
 
                 # Cast rays
                 res = engine.cast_rays(ray_origins[:current_batch_size], ray_directions[:current_batch_size])
+                if flag:
+                    print(f"res: {res}")
 
                 # Process hits
                 hit_mask = res["geomID"] >= 0

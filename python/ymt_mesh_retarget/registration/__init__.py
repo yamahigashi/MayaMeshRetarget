@@ -78,7 +78,7 @@ from .geometry import rand_cone_vector, ray_triangle_intersection, triangle_inte
 from .main import MeshRegistration, find_correspondence_pairs, visualize_correspondences
 
 # Mapping functions
-from .mapping import create_optimized_correspondence_points, find_correspondence_using_skeleton, get_mapping_points
+from .mapping import create_optimized_correspondence_points, get_mapping_points
 
 # Raycast functions
 from .raycast import perform_raycast

@@ -24,7 +24,6 @@ from ..util import (
 from .alignment import (
     calculate_alignment_transform,
     get_joint_tree,
-    get_matched_info,
     match_joint_trees,
 )
 
@@ -35,7 +34,6 @@ from .core import (
 )
 from .mapping import (
     create_optimized_correspondence_points,
-    find_correspondence_using_skeleton,
     get_mapping_points,
 )
 from .raycast import perform_raycast_with_options
@@ -297,6 +295,7 @@ class MeshRegistration:
             self.source_bone_group,
             source_weights,
             source_joints,
+            # self.options.sample_count,
         )
         logger.info(f"Mapping points: {len(src_mapping_points)}")
 
@@ -326,33 +325,14 @@ class MeshRegistration:
             source_points,
             max_points_per_target=self.options.max_points_per_target,
             min_weight_threshold=self.options.min_weight_threshold,
-            distance_weight=self.options.distance_weight,
-            ray_weight=self.options.ray_weight,
             source_mesh=self.source_mesh,
             target_mesh=self.target_mesh,
             options=self.options,
         )
         logger.info(f"Optimized correspondence points: {len(self.correspondence_points)}")
 
-        # Convert results to numpy arrays
         if len(self.correspondence_points) == 0:
-            # If advanced correspondence search fails, try simple skeleton-based method
-            logger.warning("Advanced correspondence search failed. Trying simple skeleton-based method...")
-            self.correspondence_points = find_correspondence_using_skeleton(
-                source_points,
-                target_points,
-                source_weights,
-                target_weights,
-                source_joints,
-                target_joints,
-                self.options.sample_count,
-                self.options.weight_decay,
-            )
-
-            if len(self.correspondence_points) == 0:
-                raise ValueError("No correspondence points found. Check mesh connectivity and skeleton binding.")
-        else:
-            logger.info(f"Found {len(self.correspondence_points)} correspondence points with advanced method.")
+            raise ValueError("No correspondence points found. Check mesh connectivity and skeleton binding.")
 
         # Extract point arrays from correspondence points using mesh function sets
         source_indices = [cp.source_index for cp in self.correspondence_points]
@@ -369,12 +349,12 @@ class MeshRegistration:
         # Extract vertex positions directly from mesh function sets
         for i, idx in enumerate(source_indices):
             if idx >= 0:  # Skip invalid indices
-                point = source_mesh_fn.getPoint(idx)
+                point = source_mesh_fn.getPoint(idx, om.MSpace.kWorld)
                 source_points[i] = [point.x, point.y, point.z]
 
         for i, idx in enumerate(target_indices):
             if idx >= 0:  # Skip invalid indices
-                point = target_mesh_fn.getPoint(idx)
+                point = target_mesh_fn.getPoint(idx, om.MSpace.kWorld)
                 target_points[i] = [point.x, point.y, point.z]
 
         # Restore original coordinates if alignment was used
@@ -707,7 +687,7 @@ def visualize_correspondences(
         processed_scores = [cp.score for cp in correspondence_points]
     # Create a line for each correspondence point
     for i, (cp, score) in enumerate(zip(correspondence_points, processed_scores)):
-        logger.info(f"Creating correspondence line {cp.source_index} -> {cp.target_index} {score}")
+        logger.debug(f"Creating correspondence line {cp.source_index} -> {cp.target_index} {score}")
         if cp.source_index < 0 or cp.target_index < 0:
             continue
 
@@ -715,8 +695,8 @@ def visualize_correspondences(
         color = [1, min(score * 2, 1), 0]
 
         # Get vertex positions
-        s_pt = source_mesh_fn.getPoint(cp.source_index)
-        t_pt = target_mesh_fn.getPoint(cp.target_index)
+        s_pt = source_mesh_fn.getPoint(cp.source_index, om.MSpace.kWorld)
+        t_pt = target_mesh_fn.getPoint(cp.target_index, om.MSpace.kWorld)
         src_pos = (float(s_pt.x), float(s_pt.y), float(s_pt.z))
         tar_pos = (float(t_pt.x), float(t_pt.y), float(t_pt.z))
 
@@ -885,6 +865,10 @@ def find_correspondence_pairs(
             weight_decay=weight_decay,
             align_spaces=align_spaces,
             num_threads=num_threads,
+            use_scoring_components=True,
+            use_normal_scoring=True,
+            use_weight_scoring=True,
+            use_laplacian_scoring=True,
         )
     else:
         opts = options

@@ -10,6 +10,7 @@ import numpy as np
 from maya.api import OpenMaya as om
 from numpy.typing import NDArray
 
+
 # from ..logger import logger
 
 
@@ -216,6 +217,68 @@ class BoneNode:
 
 
 @dataclass
+class SkeletonMapping:
+    """Data class for storing skeleton mapping information.
+
+    Attributes:
+        source_joints: List of source joint nodes
+        target_joints: List of target joint nodes
+        name_conversion_map: Mapping of source to target joint names
+    """
+    source_joints: list[JointNode] = field(default_factory=list)
+    target_joints: list[JointNode] = field(default_factory=list)
+    name_conversion_map: dict[str, str] = field(default_factory=dict)
+
+    def add_pair(self, src_joint: JointNode, tar_joint: JointNode) -> None:
+        """Add a joint pair to the mapping.
+
+        Args:
+            src_joint: Source joint node
+            tar_joint: Target joint node
+        """
+        self.source_joints.append(src_joint)
+        self.target_joints.append(tar_joint)
+
+    @staticmethod
+    def get(
+        src_joint_group: list[JointNode],
+        tar_joint_group: list[JointNode],
+        name_conversion_map: Optional[dict[str, str]] = None,
+    ) -> "SkeletonMapping":
+        """Get matched joint indices between source and target joint groups.
+
+        Finds joints with matching names between source and target hierarchies.
+
+        Args:
+            src_joint_group: Source joint group
+            tar_joint_group: Target joint group
+            name_conversion_map: Optional mapping of source to target joint names
+
+        Returns:
+            SkeletonMapping: Skeleton mapping object
+        """
+
+        from ..utils import get_short_name
+
+        klass = SkeletonMapping()
+        if name_conversion_map is None:
+            name_conversion_map = {}
+
+        klass.name_conversion_map = name_conversion_map
+
+        for src_joint in src_joint_group:
+            src_name = get_short_name(src_joint.detail_name)
+            for tar_joint in tar_joint_group:
+                tar_name = get_short_name(tar_joint.detail_name)
+                converted_name = name_conversion_map.get(src_name, tar_name)
+                if src_name == converted_name:
+                    klass.add_pair(src_joint, tar_joint)
+                    break
+
+        return klass
+
+
+@dataclass
 class TriangleWeightIndex:
     """Data class for triangle weight index information.
 
@@ -318,16 +381,6 @@ class RegistrationOptions:
             - For lenient filtering: 0.01-0.05
             - Default: 0.01
 
-        distance_weight: Weight coefficient for distance in correspondence scoring.
-            Controls how much physical distance affects correspondence quality.
-            Higher values prioritize closer points.
-            - Default: 1.0
-
-        ray_weight: Weight coefficient for ray quality in correspondence scoring.
-            Controls how much the ray hit quality affects correspondence scoring.
-            Higher values prioritize cleaner ray hits.
-            - Default: 0.5
-
         use_scoring_components: Whether to use the enhanced scoring component system.
             When True, uses the more advanced multi-dimensional scoring system instead
             of the simple distance and ray weight system. This option takes precedence
@@ -339,7 +392,6 @@ class RegistrationOptions:
             This is initialized with default components if use_scoring_components is True.
             - To customize, modify this list directly or set use_scoring_components to True
               and let the system initialize the defaults.
-            - Leave empty to use the legacy scoring system with distance_weight and ray_weight.
             - Default: [] (empty list, initialized at runtime if use_scoring_components is True)
 
         use_normal_scoring: Whether to use vertex normal similarity for scoring.
@@ -425,9 +477,7 @@ class RegistrationOptions:
     align_spaces: bool = True
     max_points_per_target: int = 1
     min_weight_threshold: float = 0.01
-    distance_weight: float = 1.0
-    ray_weight: float = 0.5
-    use_scoring_components: bool = False
+    use_scoring_components: bool = True
     scoring_components: list = field(default_factory=list)
     use_normal_scoring: bool = True
     use_weight_scoring: bool = False

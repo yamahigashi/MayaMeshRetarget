@@ -261,7 +261,7 @@ def convert_points_to_numpy(mesh_path: MeshPath, sampling_stride: int = 1) -> Ve
         mesh_path = res
 
     mesh_fn = get_mesh_fn(mesh_path)
-    points = mesh_fn.getPoints()
+    points = mesh_fn.getPoints(om.MSpace.kWorld)
     sparse_points = points[::sampling_stride]
     return np.array([[p.x, p.y, p.z] for p in sparse_points], dtype=np.float64)
 

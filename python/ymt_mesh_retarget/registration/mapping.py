@@ -48,6 +48,7 @@ def get_mapping_points(
     target_weights: list[list[float]],
     target_joint_names: list[str],
     max_distance: float = 0.0,
+    # sample_count: int = 1500,
 ) -> list[MappingResult]:
     """Get mapping points for target mesh vertices.
 
@@ -61,6 +62,7 @@ def get_mapping_points(
         target_weights: Target mesh skinning weights
         target_joint_names: Target joint names
         max_distance: Maximum distance (0 means no limit)
+        sample_count: Number of samples to use for mapping
 
     Returns:
         Array of mapping results for each target vertex
@@ -166,8 +168,6 @@ def create_optimized_correspondence_points(
     source_points: NDArray[np.float64],
     max_points_per_target: int = 1,
     min_weight_threshold: float = 0.01,
-    distance_weight: float = 1.0,
-    ray_weight: float = 0.5,
     source_mesh: Optional["MeshObject"] = None,
     target_mesh: Optional["MeshObject"] = None,
     options: Optional["RegistrationOptions"] = None,
@@ -183,8 +183,6 @@ def create_optimized_correspondence_points(
         source_points: source vertex positions
         max_points_per_target: Maximum number of correspondence points per source vertex
         min_weight_threshold: Minimum weight threshold
-        distance_weight: Weight coefficient for distance score
-        ray_weight: Weight coefficient for ray information score
         source_mesh: Optional source mesh for advanced scoring
         target_mesh: Optional target mesh for advanced scoring
         options: Optional registration options for advanced configuration
@@ -196,30 +194,15 @@ def create_optimized_correspondence_points(
     correspondence_dict: dict[int, list[dict[str, Any]]] = {}
 
     # Check if we're using advanced scoring components
-    use_scoring_components = False
-    scoring_components = []
+    scoring_components = options.scoring_components
 
-    if options and options.use_scoring_components and options.scoring_components:
-        use_scoring_components = True
-        scoring_components = options.scoring_components
-        logger.info(f"Using {len(scoring_components)} scoring components for correspondence optimization")
+    # If we're using advanced scoring but don't have the meshes, issue a warning
+    if not source_mesh or not target_mesh:
+        logger.warning("Advanced scoring enabled but meshes not provided. Falling back to basic scoring.")
+        raise NotImplementedError("Advanced scoring requires source and target meshes")
 
-        # If we're using advanced scoring but don't have the meshes, issue a warning
-        if not source_mesh or not target_mesh:
-            logger.warning("Advanced scoring enabled but meshes not provided. Falling back to basic scoring.")
-            use_scoring_components = False
-    else:
-        # Backward compatibility: create basic scoring components from weights
-        from .scoring_components import DistanceScoring, RayQualityScoring
-
-        # Only create these if we have both weight parameters
-        if distance_weight is not None and ray_weight is not None:
-            scoring_components = [
-                DistanceScoring(weight=distance_weight),
-                RayQualityScoring(weight=ray_weight),
-            ]
-            use_scoring_components = True
-
+    logger.debug(f"Using {len(scoring_components)} scoring components for correspondence optimization")
+    logger.debug(f"Starting correspondence optimization with {len(raycast_result_array)} source vertices")
     # Process raycast results
     for i, raycast_results in enumerate(raycast_result_array):
         if not raycast_results:
@@ -242,82 +225,69 @@ def create_optimized_correspondence_points(
 
             # Basic distance and weight
             distance = np.linalg.norm(tar_pos - src_pos)
-            basic_weight = 1.0 / (1.0 + distance)
 
-            if use_scoring_components:
-                # Create context for scoring components
-                context = {
-                    "src_pos": src_pos,
-                    "tar_pos": tar_pos,
-                    "distance": distance,
-                    "raycast_result": raycast,
-                }
+            # Create context for scoring components
+            context = {
+                "src_pos": src_pos,
+                "tar_pos": tar_pos,
+                "distance": distance,
+                "raycast_result": raycast,
+            }
 
-                # Add mesh-specific data if available
-                if source_mesh and target_mesh:
-                    # Add source normal if available
+            # Add mesh-specific data if available
+            if source_mesh and target_mesh:
+                # Add source normal if available
+                try:
+                    context["normal_src"] = source_mesh.get_vertex_normal(src_vtx_id)
+                except Exception as e:
+                    logger.debug(f"Failed to get source normal: {e}")
+                    raise
+
+                # For target normals, use vertex normals from hit triangle
+                # We'll use the first vertex index as a simplified approach
+                if raycast.vertex_indices:
                     try:
-                        context["normal_src"] = source_mesh.get_vertex_normal(src_vtx_id)
+                        tar_vtx_id = raycast.vertex_indices[0]
+                        context["normal_tar"] = target_mesh.get_vertex_normal(tar_vtx_id)
                     except Exception as e:
-                        logger.debug(f"Failed to get source normal: {e}")
+                        logger.debug(f"Failed to get target normal: {e}")
                         raise
 
-                    # For target normals, use vertex normals from hit triangle
-                    # We'll use the first vertex index as a simplified approach
-                    if raycast.vertex_indices:
-                        try:
+                # Add laplacians if available and enabled
+                if options and options.use_laplacian_scoring:
+                    try:
+                        context["laplacian_src"] = source_mesh.compute_laplacian_for_vertex(src_vtx_id)
+                        if raycast.vertex_indices:
                             tar_vtx_id = raycast.vertex_indices[0]
-                            context["normal_tar"] = target_mesh.get_vertex_normal(tar_vtx_id)
-                        except Exception as e:
-                            logger.debug(f"Failed to get target normal: {e}")
-                            raise
+                            context["laplacian_tar"] = target_mesh.compute_laplacian_for_vertex(tar_vtx_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to get laplacians: {e}")
+                        raise
 
-                    # Add laplacians if available and enabled
-                    if options and options.use_laplacian_scoring:
-                        try:
-                            context["laplacian_src"] = source_mesh.compute_laplacian_for_vertex(src_vtx_id)
-                            if raycast.vertex_indices:
-                                tar_vtx_id = raycast.vertex_indices[0]
-                                context["laplacian_tar"] = target_mesh.compute_laplacian_for_vertex(tar_vtx_id)
-                        except Exception as e:
-                            logger.debug(f"Failed to get laplacians: {e}")
-                            raise
+                # Add weight vectors if available and enabled
+                if options and options.use_weight_scoring:
+                    try:
+                        context["weights_src"] = source_mesh.get_vertex_weight_vector(src_vtx_id)
+                        if raycast.vertex_indices:
+                            tar_vtx_id = raycast.vertex_indices[0]
+                            context["weights_tar"] = target_mesh.get_vertex_weight_vector(tar_vtx_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to get weight vectors: {e}")
+                        raise
 
-                    # Add weight vectors if available and enabled
-                    if options and options.use_weight_scoring:
-                        try:
-                            context["weights_src"] = source_mesh.get_vertex_weight_vector(src_vtx_id)
-                            if raycast.vertex_indices:
-                                tar_vtx_id = raycast.vertex_indices[0]
-                                context["weights_tar"] = target_mesh.get_vertex_weight_vector(tar_vtx_id)
-                        except Exception as e:
-                            logger.debug(f"Failed to get weight vectors: {e}")
-                            raise
+            # Calculate total score using all scoring components
+            total_score = 0.0
+            total_weight = 0.0
 
-                # Calculate total score using all scoring components
-                total_score = 0.0
-                total_weight = 0.0
+            for component in scoring_components:
+                component_weight = component.get_weight()
+                component_score = component.compute_score(context)
+                total_score += component_weight * component_score
+                total_weight += component_weight
 
-                for component in scoring_components:
-                    component_weight = component.get_weight()
-                    component_score = component.compute_score(context)
-                    total_score += component_weight * component_score
-                    total_weight += component_weight
-
-                # Normalize the score
-                if total_weight > 0.0:
-                    total_score /= total_weight
-            else:
-                # Legacy scoring method
-                # Use ray information to calculate quality score
-                ray_quality = 1.0 / (1.0 + raycast.relate_distance)
-                # Consider node weight
-                node_weight = raycast.weight
-                # Calculate total score considering distance, ray quality, and node weight
-                total_score = (
-                    distance_weight * basic_weight  # Distance-based score
-                    + ray_weight * ray_quality * node_weight  # Ray quality and node weight
-                ) / (distance_weight + ray_weight)  # Normalize
+            # Normalize the score
+            if total_weight > 0.0:
+                total_score /= total_weight
 
             # Add to candidates if score exceeds threshold
             if total_score >= min_weight_threshold:
@@ -334,6 +304,7 @@ def create_optimized_correspondence_points(
 
         # Sort candidates by score (descending)
         candidates.sort(key=lambda x: x["score"], reverse=True)
+        logger.debug(f"Found {len(candidates)} candidates for source vertex {src_vtx_id}")
 
         # Keep top N candidates
         top_candidates = candidates[:max_points_per_target]
@@ -363,101 +334,3 @@ def create_optimized_correspondence_points(
             optimized_correspondence_points.append(correspondence_point)
 
     return optimized_correspondence_points
-
-
-def find_correspondence_using_skeleton(
-    source_points: NDArray[np.float64],
-    target_points: NDArray[np.float64],
-    source_weights: list[list[float]],
-    target_weights: list[list[float]],
-    source_joints: list[str],
-    target_joints: list[str],
-    sample_rate: float = 1.0,
-    weight_decay: float = 2.0,  # noqa: ARG001
-) -> list[CorrespondencePoint]:
-    """Find correspondence points using skeleton information.
-
-    This is a fallback method for finding correspondence points when
-    advanced methods fail. It uses joint weights to establish correspondences.
-
-    Args:
-        source_points: Source mesh vertex positions (N_src, 3)
-        target_points: Target mesh vertex positions (N_tar, 3)
-        source_weights: Source mesh skinning weights
-        target_weights: Target mesh skinning weights
-        source_joints: Source joint names
-        target_joints: Target joint names
-        sample_rate: Vertex sampling rate (0.0-1.0)
-        weight_decay: Weight decay coefficient
-
-    Returns:
-        List of correspondence points
-    """
-    # Create joint name to index mapping
-    source_joint_map = {get_short_name(j): i for i, j in enumerate(source_joints)}
-
-    # Reduce vertex count for sampling
-    if sample_rate < 1.0:
-        num_samples = max(10, int(len(target_points) * sample_rate))
-        sample_indices = np.linspace(0, len(target_points) - 1, num_samples).astype(int)
-    else:
-        sample_indices = range(len(target_points))
-
-    # Initialize correspondence points list
-    correspondence_points = []
-
-    # Find correspondence for each target vertex
-    for idx in sample_indices:
-        target_pos = target_points[idx]
-
-        # Find joints that influence this vertex
-        influential_joints = []
-        for joint_idx, weight in enumerate(target_weights[idx]):
-            if weight > 0.01:  # Consider only joints with significant influence
-                influential_joints.append((joint_idx, weight))
-
-        # Sort by influence weight (descending)
-        influential_joints.sort(key=lambda x: x[1], reverse=True)
-
-        best_match = None
-        min_distance = float("inf")
-
-        # Find appropriate correspondence point
-        for joint_idx, weight in influential_joints:
-            target_joint_name = get_short_name(target_joints[joint_idx])
-
-            # Check if source mesh has the same joint
-            if target_joint_name in source_joint_map:
-                source_joint_idx = source_joint_map[target_joint_name]
-
-                # Find vertices in source mesh influenced by this joint
-                candidates = []
-                for src_idx, src_weights in enumerate(source_weights):
-                    src_weight = src_weights[source_joint_idx]
-                    if src_weight > 0.01:
-                        candidates.append((src_idx, src_weight))
-
-                # Find the closest candidate
-                for src_idx, src_weight in candidates:
-                    src_pos = source_points[src_idx]
-                    distance = np.linalg.norm(src_pos - target_pos)
-
-                    # Adjust distance by weights
-                    adjusted_distance = distance / (src_weight * weight)
-
-                    if adjusted_distance < min_distance:
-                        min_distance = adjusted_distance
-                        best_match = (src_idx, src_pos)
-
-        # Add to correspondence points if a match was found
-        if best_match:
-            src_idx, _ = best_match
-            correspondence_points.append(
-                CorrespondencePoint(
-                    source_index=src_idx,
-                    target_index=idx,
-                    weight=1.0 / (1.0 + min_distance),  # Weight based on distance
-                ),
-            )
-
-    return correspondence_points

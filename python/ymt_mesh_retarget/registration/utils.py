@@ -232,7 +232,6 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
 
     # Initialize scoring components if requested
     if options.use_scoring_components and not options.scoring_components:
-        logger.info("Initializing scoring components...")
         options.scoring_components = create_default_scoring_components()
 
         # Filter scoring components based on user preferences
@@ -241,10 +240,6 @@ def validate_registration_options(options: RegistrationOptions) -> RegistrationO
                 comp for comp in options.scoring_components
                 if comp.__class__.__name__ != 'NormalScoring'
             ]
-
-        # We don't add weight and laplacian scoring by default, but if user has
-        # set the flags to True, we should add them
-        # This would be implemented when running the registration process
 
     return options
 

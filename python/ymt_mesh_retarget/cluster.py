@@ -141,7 +141,10 @@ def refine_clusters_by_topology(mesh_paths: list[MeshPath], labels: IntArray, to
     vertex_offsets = []
     vertex_offset = 0
 
-    bar = mel.eval("$tmp = $gMainProgressBar")
+    if not cmds.about(batch=True):
+        bar = mel.eval("$tmp = $gMainProgressBar")
+    else:
+        bar = None
 
     # Collect all points and build adjacency matrix
     for mesh_path in mesh_paths:
@@ -259,7 +262,11 @@ def cluster_vertices(mesh_paths: list[MeshPath]) -> IntArray:
         num_vertices = mesh_fn.numVertices
         vertex_offset += num_vertices
 
-    bar = mel.eval("$tmp = $gMainProgressBar")
+    if not cmds.about(batch=True):
+        bar = mel.eval("$tmp = $gMainProgressBar")
+    else:
+        bar = None
+
     if not cmds.about(batch=True):
         cmds.progressBar(
             bar,

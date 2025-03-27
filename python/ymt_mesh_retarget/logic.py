@@ -263,9 +263,11 @@ def retarget(
 
     start_time = time.time()
 
-    bar = mel.eval("$tmp = $gMainProgressBar")
     if not cmds.about(batch=True):
+        bar = mel.eval("$tmp = $gMainProgressBar")
         cmds.progressBar(bar, edit=True, beginProgress=True, status="Preparing Retargeting", maxValue=100)
+    else:
+        bar = None
 
     try:
         # リターゲット処理の実行

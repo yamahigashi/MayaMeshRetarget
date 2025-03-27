@@ -440,8 +440,8 @@ def perform_raycast(
         tar_triangle_indices_np = tar_triangle_indices_np[: max_triangles * 3]
 
     # Set up progress bar
-    bar = mel.eval("$tmp = $gMainProgressBar")
     if not cmds.about(batch=True):
+        bar = mel.eval("$tmp = $gMainProgressBar")
         cmds.progressBar(
             bar,
             edit=True,
@@ -450,6 +450,8 @@ def perform_raycast(
             maxValue=100,
         )
         cmds.progressBar(bar, edit=True, step=10)
+    else:
+        bar = None
 
     # Initialize raycast engine
     engine = get_raycast_engine(

@@ -5,7 +5,7 @@
 
 import numpy as np
 
-from .types import ensure_list, to_mpoint, to_mvector, to_ndarray, to_ndarray_from_vector
+from ymt_mesh_retarget.types import ensure_list, to_mpoint, to_mvector, to_ndarray, to_ndarray_from_vector
 
 
 def test_mpoint_conversion() -> None:

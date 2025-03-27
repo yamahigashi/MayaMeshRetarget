@@ -1,18 +1,21 @@
 [project]
 name = "robust-retargeting-tool-for-maya"
 description = "A tool for retargeting meshes in Maya"
+requires-python = "==3.9.7"
 version = "0.1.0"
 dependencies = [
   "numpy",
   "scipy",
   "scikit-learn",
   "embreex",
+  "pytest",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pyright",
-  "refurb",
+  "pytest",
+  # "refurb",
   "ruff",
 ]
 
@@ -73,6 +76,7 @@ ignore = [
   "RUF002",  # Docstring contains ambiguous word
   "RUF003",
   "E741",  # ambiguous variable name
+  "SIM103",
 ]
 
 fixable = ["ALL"]

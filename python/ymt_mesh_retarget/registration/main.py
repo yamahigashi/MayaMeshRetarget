@@ -24,7 +24,6 @@ from ..util import (
 from .alignment import (
     calculate_alignment_transform,
     get_joint_tree,
-    get_matched_info,
     match_joint_trees,
 )
 
@@ -35,7 +34,6 @@ from .core import (
 )
 from .mapping import (
     create_optimized_correspondence_points,
-    find_correspondence_using_skeleton,
     get_mapping_points,
 )
 from .raycast import perform_raycast_with_options
@@ -230,7 +228,7 @@ class MeshRegistration:
 
         # Validate options
         self.options = validate_registration_options(self.options)
-        
+
         # Precompute mesh data if needed
         if self.options.use_scoring_components and self.options.precompute_mesh_data:
             self._precompute_mesh_data()
@@ -297,6 +295,7 @@ class MeshRegistration:
             self.source_bone_group,
             source_weights,
             source_joints,
+            # self.options.sample_count,
         )
         logger.info(f"Mapping points: {len(src_mapping_points)}")
 
@@ -326,33 +325,14 @@ class MeshRegistration:
             source_points,
             max_points_per_target=self.options.max_points_per_target,
             min_weight_threshold=self.options.min_weight_threshold,
-            distance_weight=self.options.distance_weight,
-            ray_weight=self.options.ray_weight,
             source_mesh=self.source_mesh,
             target_mesh=self.target_mesh,
             options=self.options,
         )
         logger.info(f"Optimized correspondence points: {len(self.correspondence_points)}")
 
-        # Convert results to numpy arrays
         if len(self.correspondence_points) == 0:
-            # If advanced correspondence search fails, try simple skeleton-based method
-            logger.warning("Advanced correspondence search failed. Trying simple skeleton-based method...")
-            self.correspondence_points = find_correspondence_using_skeleton(
-                source_points,
-                target_points,
-                source_weights,
-                target_weights,
-                source_joints,
-                target_joints,
-                self.options.sample_count,
-                self.options.weight_decay,
-            )
-
-            if len(self.correspondence_points) == 0:
-                raise ValueError("No correspondence points found. Check mesh connectivity and skeleton binding.")
-        else:
-            logger.info(f"Found {len(self.correspondence_points)} correspondence points with advanced method.")
+            raise ValueError("No correspondence points found. Check mesh connectivity and skeleton binding.")
 
         # Extract point arrays from correspondence points using mesh function sets
         source_indices = [cp.source_index for cp in self.correspondence_points]
@@ -369,12 +349,12 @@ class MeshRegistration:
         # Extract vertex positions directly from mesh function sets
         for i, idx in enumerate(source_indices):
             if idx >= 0:  # Skip invalid indices
-                point = source_mesh_fn.getPoint(idx)
+                point = source_mesh_fn.getPoint(idx, om.MSpace.kWorld)
                 source_points[i] = [point.x, point.y, point.z]
 
         for i, idx in enumerate(target_indices):
             if idx >= 0:  # Skip invalid indices
-                point = target_mesh_fn.getPoint(idx)
+                point = target_mesh_fn.getPoint(idx, om.MSpace.kWorld)
                 target_points[i] = [point.x, point.y, point.z]
 
         # Restore original coordinates if alignment was used
@@ -521,51 +501,34 @@ class MeshRegistration:
         )
 
         return group_name
-        
-    def _precompute_mesh_data(self):
+
+    def _precompute_mesh_data(self) -> None:
         """Precompute mesh data for advanced scoring.
-        
+
         This method precomputes vertex normals, Laplacian coordinates,
         and weight vectors for both source and target meshes.
         The data is cached in the mesh objects for fast access during scoring.
         """
         logger.info("Precomputing mesh data for advanced scoring...")
-        
+
         # Always precompute normals if they're going to be used
         if self.options.use_normal_scoring:
             logger.info("Precomputing vertex normals...")
             self.source_mesh.precompute_vertex_normals()
             self.target_mesh.precompute_vertex_normals()
-            
+
         # Conditionally precompute Laplacians if they're going to be used
         if self.options.use_laplacian_scoring:
             logger.info("Precomputing Laplacian coordinates...")
             self.source_mesh.precompute_laplacians()
             self.target_mesh.precompute_laplacians()
-            
+
         # Conditionally precompute weight vectors if they're going to be used
         if self.options.use_weight_scoring:
             logger.info("Precomputing weight vectors...")
-            # Get joint relationships
-            if not hasattr(self, 'source_joint_group') or not hasattr(self, 'target_joint_group') or self.source_joint_group is None or self.target_joint_group is None:
-                source_weights, source_joints = self._get_skin_weights(self.source_mesh)
-                target_weights, target_joints = self._get_skin_weights(self.target_mesh)
-                
-                self.source_joint_paths, self.source_joint_group, self.source_bone_group = get_joint_tree(source_joints)
-                self.target_joint_paths, self.target_joint_group, self.target_bone_group = get_joint_tree(target_joints)
-            
-            # Get matched joint names for filtering
-            try:
-                _, _, joint_map = get_matched_info(self.source_joint_group, self.target_joint_group)
-                matched_source_joints = [src for src, _ in joint_map.items()]
-                matched_target_joints = [tar for _, tar in joint_map.items()]
-                
-                # Precompute weight vectors with matched joint filtering
-                self.source_mesh.precompute_weight_vectors(matched_source_joints)
-                self.target_mesh.precompute_weight_vectors(matched_target_joints)
-            except Exception as e:
-                logger.warning(f"Failed to precompute weight vectors: {e}")
-            
+            self.source_mesh.precompute_weight_vectors()
+            self.target_mesh.precompute_weight_vectors()
+
         logger.info("Mesh data precomputation complete!")
 
 
@@ -574,6 +537,8 @@ def visualize_correspondences(
     source_mesh_fn: om.MFnMesh,
     target_mesh_fn: om.MFnMesh,
     line_thickness: int = 1,
+    outlier_removal: bool = True,
+    outlier_threshold: float = 2.0,
 ) -> str:
     """Create visualization of correspondence points between source and target meshes.
 
@@ -601,6 +566,12 @@ def visualize_correspondences(
             Higher values create thicker, more visible lines.
             Default: 1
 
+        outlier_removal: Whether to remove outlier correspondence points.
+            If True, removes correspondence points with weights below a threshold.
+            The logic of outlier removal is based on Z-score calculation.
+
+        outlier_threshold: Threshold for outlier removal (standard deviations from mean).
+
     Returns:
         Name of the created transform node that contains all the line curves.
         This node can be selected or manipulated in Maya like any other transform.
@@ -627,17 +598,105 @@ def visualize_correspondences(
     # Create empty transform node for correspondence lines
     transform_name = cmds.createNode("transform", name="correspondenceLines")
 
+    # Normalize scores for color mapping
+    processed_scores = []
+    if correspondence_points:
+        # Extract valid scores (excluding invalid correspondences)
+        valid_scores = [cp.score for cp in correspondence_points
+                       if cp.source_index >= 0 and cp.target_index >= 0]
+
+        # Store original stats for logging
+        original_min = min(valid_scores) if valid_scores else 0.0
+        original_max = max(valid_scores) if valid_scores else 0.0
+
+        if valid_scores:
+
+            # Apply outlier removal if requested
+            filtered_scores = valid_scores
+            outliers_removed = 0
+            score_array = np.array(valid_scores)
+
+            # Z-score method
+            mean = np.mean(score_array)
+            std = np.std(score_array)
+
+            lower_bound = mean - outlier_threshold * std
+            upper_bound = mean + outlier_threshold * std
+
+            # Filter scores within bounds
+            is_outlier = (score_array < lower_bound) | (score_array > upper_bound)
+            filtered_scores = score_array[~is_outlier].tolist()
+            outliers_removed = np.sum(is_outlier)
+
+            logger.info(f"Z-score outlier removal: mean={mean:.4f}, std={std:.4f}")
+            logger.info(f"Bounds: [{lower_bound:.4f}, {upper_bound:.4f}]")
+
+            # Calculate normalization range using filtered scores
+            if filtered_scores:
+                min_score = min(filtered_scores)
+                max_score = max(filtered_scores)
+                score_range = max_score - min_score
+
+                # Avoid division by zero if all scores are identical
+                if score_range > 0.0001:
+                    # Create mapping function to normalize scores
+                    def normalize_score(score: float) -> float:
+                        if score < min_score:
+                            return 0.0  # Clamp outliers below min to 0.0 (red)
+                        elif score > max_score:
+                            return 1.0  # Clamp outliers above max to 1.0 (green)
+                        else:
+                            return (score - min_score) / score_range
+
+                    # Apply normalization to all scores
+                    processed_scores = [normalize_score(cp.score)
+                                       if cp.source_index >= 0 and cp.target_index >= 0
+                                       else 0.0
+                                       for cp in correspondence_points]
+                else:
+                    # If all filtered scores are approximately equal, set them to 0.5 (yellow)
+                    processed_scores = [0.5 if cp.source_index >= 0 and cp.target_index >= 0
+                                      else 0.0
+                                      for cp in correspondence_points]
+
+                # Log outlier removal stats
+                if outlier_removal != "none":
+                    logger.info(f"Outlier removal: removed {outliers_removed} outliers of {len(valid_scores)} valid scores ({outliers_removed/len(valid_scores)*100:.1f}%)")
+                    logger.info(f"Normalization range after outlier removal: [{min_score:.4f}, {max_score:.4f}]")
+            else:
+                # Fallback if all scores were considered outliers
+                logger.warning("All scores were considered outliers! Using original scores for normalization.")
+                min_score = original_min
+                max_score = original_max
+                score_range = max_score - min_score
+
+                if score_range > 0.0001:
+                    processed_scores = [(cp.score - min_score) / score_range
+                                       if cp.source_index >= 0 and cp.target_index >= 0
+                                       else 0.0
+                                       for cp in correspondence_points]
+                else:
+                    processed_scores = [0.5 if cp.source_index >= 0 and cp.target_index >= 0
+                                      else 0.0
+                                      for cp in correspondence_points]
+        else:
+            # No valid scores to process
+            processed_scores = [0.0 for _ in correspondence_points]
+    else:
+        # Use raw scores if normalization is not requested
+        processed_scores = [cp.score for cp in correspondence_points]
     # Create a line for each correspondence point
-    for i, cp in enumerate(correspondence_points):
+    for i, (cp, score) in enumerate(zip(correspondence_points, processed_scores)):
+        logger.debug(f"Creating correspondence line {cp.source_index} -> {cp.target_index} {score}")
         if cp.source_index < 0 or cp.target_index < 0:
             continue
 
-        # Set color based on weight (red -> yellow -> green)
-        color = [1, min(cp.weight * 2, 1), 0]
+        # Set color based on score (red -> yellow -> green)
+        color = [1, min(score * 2, 1), 0]
 
         # Get vertex positions
-        s_pt = source_mesh_fn.getPoint(cp.source_index)
-        t_pt = target_mesh_fn.getPoint(cp.target_index)
+        s_pt = source_mesh_fn.getPoint(cp.source_index, om.MSpace.kWorld)
+        t_pt = target_mesh_fn.getPoint(cp.target_index, om.MSpace.kWorld)
         src_pos = (float(s_pt.x), float(s_pt.y), float(s_pt.z))
         tar_pos = (float(t_pt.x), float(t_pt.y), float(t_pt.z))
 
@@ -806,6 +865,10 @@ def find_correspondence_pairs(
             weight_decay=weight_decay,
             align_spaces=align_spaces,
             num_threads=num_threads,
+            use_scoring_components=True,
+            use_normal_scoring=True,
+            use_weight_scoring=True,
+            use_laplacian_scoring=True,
         )
     else:
         opts = options

@@ -246,8 +246,8 @@ def retarget(
     source_obj = create_retargetable_object(source)
     target_obj = create_retargetable_object(target)
 
-    util.get_mesh_dag(source)
-    util.get_mesh_dag(target)
+    # util.get_mesh_dag(source)
+    # util.get_mesh_dag(target)
 
     retarget_objects = []
     if isinstance(objects, str):

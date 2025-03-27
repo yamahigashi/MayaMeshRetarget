@@ -151,60 +151,78 @@ def get_joint_tree(joint_names: list[str]) -> tuple[list[om.MDagPath], list[Join
         dag_path = selection.getDagPath(0)
         joint_paths.append(dag_path)
 
-    # Build joint tree
-    joint_group = []
-    bone_group = []
+    if not joint_paths:
+        return [], [], []
 
-    # Find root joints (joints without parents)
+    # --------------------------------------------------------------------
+    # 2. Find root joints among those DAG paths
+    # --------------------------------------------------------------------
     root_joints = find_root_joints(joint_paths)
 
-    # Build tree from each root joint
-    for root_path in root_joints:
-        queue = [root_path]
-        visited = set()
+    # --------------------------------------------------------------------
+    # 3. Perform a BFS from each root to build the JointNode/BoneNode lists
+    # --------------------------------------------------------------------
+    joint_group: list[JointNode] = []
+    bone_group: list[BoneNode] = []
+    visited = set()
 
-        while queue:
-            current_path = queue.pop(0)
-            if current_path.fullPathName() in visited:
-                continue
+    # We will re-populate joint_paths in BFS order
+    bfs_ordered_paths: list[om.MDagPath] = []
 
-            visited.add(current_path.fullPathName())
+    # A queue of (dag_path, parent_index)
+    # parent_index = -1 indicates a root (no parent)
+    queue = []
+    for root in root_joints:
+        queue.append((root, -1))
 
-            # Create joint node
-            name = current_path.fullPathName()
-            pos = cmds.xform(current_path.fullPathName(), query=True, translation=True, worldSpace=True)
-            position = np.array(pos, dtype=np.float64)
-            matrix = cmds.xform(current_path.fullPathName(), query=True, matrix=True, worldSpace=True)
+    while queue:
+        current_path, parent_index = queue.pop(0)
+        current_full_name = current_path.fullPathName()
+        if current_full_name in visited:
+            continue
 
-            joint_node = JointNode(
-                path=current_path,
-                index=len(joint_group),
-                detail_name=name,
-                position=position,
-                matrix=matrix,
+        visited.add(current_full_name)
+
+        # ----------------------------------------------------------------
+        # Create a JointNode for the current DAG path
+        # ----------------------------------------------------------------
+        name = current_full_name
+        pos = cmds.xform(name, query=True, translation=True, worldSpace=True)
+        position = np.array(pos, dtype=np.float64)
+        matrix = cmds.xform(name, query=True, matrix=True, worldSpace=True)
+
+        current_index = len(joint_group)
+        joint_node = JointNode(
+            path=current_path,
+            index=current_index,
+            detail_name=name,
+            position=position,
+            matrix=matrix,
+        )
+
+        joint_group.append(joint_node)
+        bfs_ordered_paths.append(current_path)
+
+        # ----------------------------------------------------------------
+        # Create a BoneNode if this is not a root
+        # ----------------------------------------------------------------
+        if parent_index != -1:
+            bone_node = BoneNode(
+                start_joint_index=parent_index,
+                end_joint_index=current_index,
             )
-            joint_group.append(joint_node)
+            bone_group.append(bone_node)
 
-            # Get child joints
-            children = cmds.listRelatives(current_path.fullPathName(), children=True, type="joint", fullPath=True) or []
+        # ----------------------------------------------------------------
+        # Enqueue child joints
+        # ----------------------------------------------------------------
+        children = cmds.listRelatives(name, children=True, type="joint", fullPath=True) or []
+        for child_name in children:
+            child_sel = om.MSelectionList()
+            child_sel.add(child_name)
+            child_path = child_sel.getDagPath(0)
 
-            for child in children:
-                # Skip helper joints
-                if "helper" in child:
-                    continue
-
-                child_sel = om.MSelectionList()
-                child_sel.add(child)
-                child_path = child_sel.getDagPath(0)
-
-                # Create bone node
-                bone_node = BoneNode(
-                    start_joint_index=joint_node.index,
-                    end_joint_index=len(joint_group),  # Index of child joint to be added
-                )
-                bone_group.append(bone_node)
-
-                queue.append(child_path)
+            queue.append((child_path, current_index))
 
     return joint_paths, joint_group, bone_group
 

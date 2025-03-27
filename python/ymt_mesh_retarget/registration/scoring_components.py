@@ -234,8 +234,6 @@ def create_default_scoring_components() -> list[IScoringComponent]:
         DistanceScoring(weight=1.0),
         RayQualityScoring(weight=0.5),
         NormalScoring(weight=0.8),
-        # WeightVectorScoring and LaplacianScoring are commented out by default
-        # as they require additional preprocessing
-        # WeightVectorScoring(weight=0.7),
-        # LaplacianScoring(weight=0.6),
+        WeightVectorScoring(weight=0.7),
+        LaplacianScoring(weight=0.6),
     ]

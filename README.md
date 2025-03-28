@@ -27,7 +27,7 @@ designed for Autodesk Maya and leverages Maya's OpenMaya API along with scientif
 - **Multiple Object Types**  
   Works with meshes, joints, and generic transform nodes—handling positional, rotational, and scale data when needed.
 
-- **Advanced Registration**  (WIP)
+- **Advanced Registration(WIP)**
   Includes a dedicated registration module for establishing correspondences between meshes that have different vertex counts or topologies.
 
 MayaMeshRetarget is released under the MIT License (see the [LICENSE](LICENSE) file for details). Contributions are welcome—see the **Contributing** section below.

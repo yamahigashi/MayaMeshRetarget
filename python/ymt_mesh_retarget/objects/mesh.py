@@ -13,6 +13,7 @@ from ..util import (
     get_mesh_dag,
     get_mesh_fn,
     get_skin_cluster,
+    get_short_name,
     set_points,
     timeit,
 )
@@ -68,11 +69,32 @@ class MeshObject(RetargetableObject):
             )
         return transforms
 
+    def get_parent_name(self) -> Optional[str]:
+        """親オブジェクトの名前を取得."""
+        if cmds.objectType(self.name) == "mesh":
+            parents = cmds.listRelatives(self.name, parent=True, fullPath=True)
+            parents = cmds.listRelatives(parents[0], parent=True, fullPath=True)
+        else:
+            parents = cmds.listRelatives(self.name, parent=True, fullPath=True)
+        if parents:
+            return parents[0]
+
+        return None
+
     def duplicate(self, suffix: str = "_retarget") -> "MeshObject":
         """メッシュを複製."""
+
         mesh_name = self.dag_path.fullPathName().split("|")[-1]
         new_name = f"{mesh_name}{suffix}"
-        duplicate = cmds.duplicate(self.name, name=new_name)[0]
+
+        trans = cmds.listRelatives(self.name, parent=True, fullPath=True)[0]
+        duplicate = cmds.duplicate(trans, name=new_name)[0]
+        duplicate = self.parent_retarget(duplicate)
+
+        short_name = get_short_name(trans)
+        duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")
+        duplicate = cmds.listRelatives(duplicate, shapes=True, fullPath=True)[0]
+
         return self.__class__.create_from_path(duplicate)
 
     def apply_transforms(self, transform_data: list[dict]) -> None:

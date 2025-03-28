@@ -2,7 +2,10 @@ from abc import ABC, abstractmethod
 from typing import Optional, Union
 
 import numpy as np
+from maya import cmds
 from maya.api import OpenMaya as om
+
+from ..logger import logger
 
 
 class RetargetableObject(ABC):
@@ -45,3 +48,29 @@ class RetargetableObject(ABC):
     def create_from_path(path: Union[str, om.MDagPath]) -> "RetargetableObject":
         """パスからインスタンスを作成するファクトリメソッド."""
         pass
+
+    def get_parent_name(self) -> Optional[str]:
+        """親オブジェクトの名前を取得."""
+        parents = cmds.listRelatives(self.name, parent=True, fullPath=True)
+        if parents:
+            return parents[0]
+
+        return None
+
+    def parent_retarget(self, name: str, suffix: str = "_retarget") -> str:
+        """リターゲット用の親オブジェクトを作成."""
+        original_parent = self.get_parent_name()
+        if not original_parent:
+            logger.debug(f"Parent not found, {name}")
+            return name
+
+        parent_path_parts = original_parent.split("|")
+        parent_path_parts = [f"{part}{suffix}" for part in parent_path_parts[1:]]
+        retargeted_parent_name = "|" + "|".join(parent_path_parts)
+        retargeted_parent = cmds.ls(retargeted_parent_name, long=True)
+        if not retargeted_parent:
+            logger.debug(f"Retargeted parent not found, {original_parent} -> {retargeted_parent_name}")
+
+        parented_node = cmds.parent(name, retargeted_parent)
+
+        return parented_node

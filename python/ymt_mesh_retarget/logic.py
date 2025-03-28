@@ -25,13 +25,12 @@ import warnings
 from collections.abc import Sequence
 from typing import Callable, Union
 
-from scipy.spatial.distance import cdist
-
 import numpy as np
 from maya import cmds, mel
 from maya.api import (
     OpenMaya as om,
 )
+from scipy.spatial.distance import cdist
 
 # from scipy.spatial.transform import Rotation  # TODO: implement later
 from sklearn.decomposition import PCA
@@ -290,7 +289,7 @@ def retarget(
             cmds.progressBar(bar, edit=True, endProgress=True)
 
         end_time = time.time()
-        print(f"Retargeting completed in {end_time - start_time:.2f} seconds ({kernel.__name__})")
+        logger.info(f"Retargeting completed in {end_time - start_time:.2f} seconds ({kernel.__name__})")
 
     # return [m.fullPathName() for m in deformed_meshes]
 
@@ -338,8 +337,9 @@ def __retarget(
     results = []
     for obj in retarget_objects:
         # オブジェクトの複製
+        logger.info(f"Processing {obj.name} to duplicate")
         new_obj = obj.duplicate()
-        print(f"Processing {new_obj.name}")
+        logger.info(f"Processing {new_obj.name} duplicate completed")
 
         # 変形処理（オブジェクトのタイプに応じた処理が内部で実行される）
         __apply_rbf_deformation(

@@ -1,8 +1,7 @@
 # MayaMeshRetarget
 MayaMeshRetarget is a tool for retargeting mesh deformations between 3D character models. It uses a 
 combination of Radial Basis Function (RBF) interpolation and skin weight-based clustering to transfer 
-complex deformations from a source mesh to a target mesh. This is especially useful when two characters 
-share a similar rig (skeleton and skin weights) but have different proportions or topology. The tool 
+complex deformations from a source mesh to a target mesh. The tool 
 preserves the inherent rigidity of objects or regions where conventional retargeting methods often 
 introduce distortions. In these cases, the method minimizes unwanted deformation—ensuring that rigid 
 parts remain stable even when other regions undergo significant transformation. MayaMeshRetarget is 
@@ -28,7 +27,7 @@ designed for Autodesk Maya and leverages Maya's OpenMaya API along with scientif
 - **Multiple Object Types**  
   Works with meshes, joints, and generic transform nodes—handling positional, rotational, and scale data when needed.
 
-- **Advanced Registration**  
+- **Advanced Registration**  (WIP)
   Includes a dedicated registration module for establishing correspondences between meshes that have different vertex counts or topologies.
 
 MayaMeshRetarget is released under the MIT License (see the [LICENSE](LICENSE) file for details). Contributions are welcome—see the **Contributing** section below.

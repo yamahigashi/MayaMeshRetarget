@@ -457,3 +457,51 @@ def restructure_meshes_hierarchy(suffix: str = "retarget", targets: Optional[lis
 def get_short_name(name: str) -> str:
     """Get the short name of the given name."""
     return name.split("|")[-1].split(":")[-1].split("|")[-1]
+
+
+def get_hierarchy(nodes: list[str]) -> list[str]:
+    """Get a sorted list of unique parent paths (hierarchy) including the nodes.
+
+    - The list is sorted by hierarchy depth.
+    - The list includes the nodes themselves
+
+    Args:
+        nodes: List of nodes to build trees from
+
+    Returns:
+        List of nodes in tree structure sorted by hierarchy depth and sibling order
+    """
+
+    def get_sibling_order(node: str) -> int:
+        parent = cmds.listRelatives(node, parent=True, fullPath=True) or []
+        if not parent:
+            return 0
+
+        siblings = cmds.listRelatives(parent[0], fullPath=True) or []
+        return siblings.index(node)
+
+    candidates = []
+    for node in nodes:
+
+        try:
+            full_path = cmds.ls(node, long=True)[0]
+        except IndexError:
+            logger.error(f"Node not found: {node}")
+            continue
+
+        depth = len(full_path.split("|"))
+        dag_order = get_sibling_order(full_path)
+
+        candidates.append((full_path, depth, dag_order))
+
+        for i in range(2, len(full_path.split("|"))):
+            parent_path = "|".join(full_path.split("|")[:i])
+            entry = (parent_path, i, get_sibling_order(parent_path))
+            if entry not in candidates:
+                candidates.append(entry)
+
+
+    # sort by depth and dag order
+    hierarchy = [c[0] for c in sorted(candidates, key=lambda x: (x[1], x[2]))]
+
+    return hierarchy

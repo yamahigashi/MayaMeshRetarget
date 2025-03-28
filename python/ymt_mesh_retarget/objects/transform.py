@@ -1,11 +1,14 @@
-from typing import Optional
-
 from scipy.spatial.transform import Rotation
+from typing import Optional
 
 import numpy as np
 from maya import cmds
 
-from ..util import get_dag_path
+from ..util import (
+    get_dag_path,
+    get_short_name,
+)
+from ..logger import logger
 from .base import RetargetableObject
 
 
@@ -51,10 +54,13 @@ class TransformObject(RetargetableObject):
 
     def duplicate(self, suffix: str = "_retarget") -> "TransformObject":
         """トランスフォームを複製."""
+
         duplicate = cmds.duplicate(self.name, parentOnly=True)[0]
-        short_name = cmds.ls(duplicate, shortNames=True)[0]
-        if not short_name.endswith(suffix):
-            duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")
+        duplicate = self.parent_retarget(duplicate)
+
+        short_name = get_short_name(self.name)
+        duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")
+
         return self.__class__.create_from_path(duplicate)
 
     def apply_transforms(self, transform_data: list[dict]) -> None:

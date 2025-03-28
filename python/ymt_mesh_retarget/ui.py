@@ -544,26 +544,6 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         meshes_group_box_layout.addLayout(ret_layout)
         self.meshes_group_box.setLayout(meshes_group_box_layout)
 
-        # # -----------------------------------------------
-        # # オブジェクトタイプの選択UI
-        # self.object_type_label = QLabel("Object Type:", self)
-        # self.object_type_label.setAlignment(Qt.AlignRight)
-        # self.object_type_label.setFixedWidth(LABEL_WIDTH)
-        # self.object_type_mesh = QRadioButton("Mesh", self)
-        # self.object_type_mesh.setChecked(True)
-        # self.object_type_mesh.toggled.connect(self.objectTypeToggled)
-        # self.object_type_joint = QRadioButton("Joint", self)
-        # self.object_type_joint.toggled.connect(self.objectTypeToggled)
-        # self.object_type_transform = QRadioButton("Transform", self)
-        # self.object_type_transform.toggled.connect(self.objectTypeToggled)
-        #
-        # # 階層維持オプション
-        # self.hierarchy_label = QLabel("Maintain Hierarchy:", self)
-        # self.hierarchy_label.setAlignment(Qt.AlignRight)
-        # self.hierarchy_label.setFixedWidth(LABEL_WIDTH)
-        # self.hierarchy_on = QRadioButton("On", self)
-        # self.hierarchy_on.setChecked(True)
-        # self.hierarchy_off = QRadioButton("Off", self)
         # -----------------------------------------------
 
         # Registration settings layout
@@ -912,6 +892,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         return False
 
+    @util.one_undo
     def executeButtonClicked(self) -> None:
         # type: () -> None
         """Search for vertices to transfer weights from."""
@@ -921,7 +902,9 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
 
         src = self.src_line_edit.text()
         dst = self.dst_line_edit.text()
-        retarget_meshes = [self.ret_list_widget.item(i).text() for i in range(self.ret_list_widget.count())]
+        retarget_objects = [self.ret_list_widget.item(i).text() for i in range(self.ret_list_widget.count())]
+        retarget_objects = util.get_hierarchy(retarget_objects)
+
         radius_coeff = self.dist_slider.value()
         angle = self.angle_slider.value()
         sampling_stride = 10
@@ -956,7 +939,7 @@ class RetargetingToolWindow(MayaQWidgetBaseMixin, QWidget):
         objects = logic.retarget(
             source=src,
             target=dst,
-            objects=retarget_meshes,
+            objects=retarget_objects,
             # kernel=kernel_name,
             radius_coefficient=radius_coeff,
             angle=angle,

@@ -1,9 +1,12 @@
-from scipy.spatial.transform import Rotation
-
 import numpy as np
 from maya import cmds
+from scipy.spatial.transform import Rotation
 
-from ..util import get_dag_path
+from ..logger import logger
+from ..util import (
+    get_dag_path,
+    get_short_name,
+)
 from .base import RetargetableObject
 
 
@@ -61,50 +64,14 @@ class JointObject(RetargetableObject):
 
     def duplicate(self, suffix: str = "_retarget") -> "JointObject":
         """ジョイント階層を複製."""
-        # ルートジョイントを特定
-        current = self.name
-        short_name = cmds.ls(current, shortNames=True)[0]
-        if cmds.objExists(f"{short_name}{suffix}"):
-            if len(cmds.ls(f"{short_name}{suffix}", long=True)) > 1:
-                mes = f"Duplicated joint name found: {short_name}{suffix}"
-                raise ValueError(mes)
 
-            return self.__class__.create_from_path(f"{short_name}{suffix}")
+        duplicate = cmds.duplicate(self.name, parentOnly=True)[0]
+        duplicate = self.parent_retarget(duplicate)
 
-        while True:
-            parent = cmds.listRelatives(current, parent=True, type="joint")
-            if not parent:
-                break
-            current = parent[0]
+        short_name = get_short_name(self.name)
+        duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")
 
-        # Store the original joint hierarchy names
-        original_joint_hierarchy = cmds.listRelatives(current, allDescendents=True, type="joint", fullPath=True) or []
-        original_joint_hierarchy.insert(0, current)
-
-        # 階層ごと複製
-        duped = cmds.duplicate(current, renameChildren=True)[0]
-
-        # すべての複製されたジョイントにサフィックスを追加
-        joint_hierarchy = cmds.listRelatives(duped, allDescendents=True, type="joint", fullPath=True) or []
-        joint_hierarchy.insert(0, duped)
-
-        # ループで処理中名前変更を伴うため、パスでの参照をUUIDでの参照にする
-        joint_uuids = [cmds.ls(joint, uuid=True)[0] for joint in joint_hierarchy]
-
-        for i, joint_uuid in enumerate(joint_uuids):
-            joint = cmds.ls(joint_uuid, long=True)[0]
-            if not cmds.objExists(joint):
-                raise ValueError("Joint does not exist")
-
-            name = f"""{original_joint_hierarchy[i].split("|")[-1]}{suffix}"""
-            cmds.rename(joint, name)
-
-        if cmds.objExists(f"{short_name}{suffix}"):
-            if len(cmds.ls(f"{short_name}{suffix}", long=True)) > 1:
-                mes = f"Duplicated joint name found: {short_name}{suffix}"
-                raise ValueError(mes)
-
-            return self.__class__.create_from_path(f"{short_name}{suffix}")
+        return self.__class__.create_from_path(duplicate)
 
     def apply_transforms(self, transform_data: list[dict]) -> None:
         """変換情報をジョイントに適用."""

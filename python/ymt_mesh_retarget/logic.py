@@ -51,8 +51,11 @@ from .objects.base import RetargetableObject
 
 
 if typing.TYPE_CHECKING:
+    from .types import (
+        VertexArray,
+    )
 
-    Kernel = Callable[[np.ndarray, float], np.ndarray]
+    Kernel = Callable[[VertexArray, float], VertexArray]
 
 
 ##############################################################################

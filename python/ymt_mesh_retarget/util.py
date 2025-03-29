@@ -4,10 +4,6 @@ import functools
 import time
 from typing import Any, Callable, Optional, TypeVar, Union
 
-from scipy.sparse import (
-    lil_matrix,
-)
-
 import numpy as np
 from maya import cmds
 from maya.api import (
@@ -15,6 +11,9 @@ from maya.api import (
 )
 from maya.api import (
     OpenMayaAnim as oma,
+)
+from scipy.sparse import (
+    lil_matrix,
 )
 
 from .logger import logger

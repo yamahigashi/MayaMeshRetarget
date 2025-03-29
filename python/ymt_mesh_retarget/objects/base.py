@@ -1,3 +1,4 @@
+import typing
 from abc import ABC, abstractmethod
 from typing import Optional, Union
 
@@ -6,6 +7,12 @@ from maya import cmds
 from maya.api import OpenMaya as om
 
 from ..logger import logger
+
+
+if typing.TYPE_CHECKING:
+    from ..types import (
+        VertexArray,
+    )
 
 
 class RetargetableObject(ABC):

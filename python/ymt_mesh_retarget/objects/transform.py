@@ -1,14 +1,14 @@
-from scipy.spatial.transform import Rotation
 from typing import Optional
 
 import numpy as np
 from maya import cmds
+from scipy.spatial.transform import Rotation
 
+from ..logger import logger
 from ..util import (
     get_dag_path,
     get_short_name,
 )
-from ..logger import logger
 from .base import RetargetableObject
 
 

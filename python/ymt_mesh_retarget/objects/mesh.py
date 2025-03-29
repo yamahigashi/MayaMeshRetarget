@@ -1,4 +1,5 @@
-from typing import Optional, Union  # noqa: I001
+import typing
+from typing import Optional, Union
 
 import numpy as np
 import scipy.sparse as sp
@@ -12,12 +13,19 @@ from ..util import (
     convert_points_to_numpy,
     get_mesh_dag,
     get_mesh_fn,
-    get_skin_cluster,
     get_short_name,
+    get_skin_cluster,
     set_points,
     timeit,
 )
 from .base import RetargetableObject
+
+
+if typing.TYPE_CHECKING:
+    from ..types import (
+        IndexArray,
+        VertexArray,
+    )
 
 
 class MeshObject(RetargetableObject):

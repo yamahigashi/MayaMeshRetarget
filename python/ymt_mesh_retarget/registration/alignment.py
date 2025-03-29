@@ -2,19 +2,23 @@
 
 This module provides functions for aligning meshes and joints in space.
 """
-
 import typing
 from typing import Callable, Optional
 
 import numpy as np
 from maya import cmds
 from maya.api import OpenMaya as om
-from numpy.typing import NDArray
 
 from ..logic import RBF, calculate_rbf_weight_matrix, get_distance_matrix
+from ..types import VertexArray
 from ..util import timeit
-from .core import BoneNode, JointNode, Kernel
-from .utils import find_root_joints, get_matched_info, match_joint_positions, scale_joint_hierarchy_to_mesh
+from .core import BoneNode, CorrespondencePoint, JointNode, Kernel
+from .utils import (
+    find_root_joints,
+    get_matched_info,
+    match_joint_positions,
+    scale_joint_hierarchy_to_mesh,
+)
 
 
 if typing.TYPE_CHECKING:

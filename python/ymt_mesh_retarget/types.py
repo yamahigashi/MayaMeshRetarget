@@ -16,12 +16,12 @@ from maya.api import OpenMaya as om
 
 # Common type aliases
 MeshPath = Union[om.MDagPath, str]
-VertexArray = NDArray[np.float64]  # type: ignore
-JointWeights = NDArray[np.float64]  # type: ignore
-PointList = Union[list[om.MPoint], list[list[float]], NDArray[np.float64]]  # type: ignore
-IndexArray = NDArray[np.int_]  # type: ignore
-FloatArray = NDArray[np.float64]  # type: ignore
-IntArray = NDArray[np.int_]  # type: ignore
+VertexArray = NDArray[np.float64]
+JointWeights = NDArray[np.float64]
+PointList = Union[list[om.MPoint], list[list[float]], NDArray[np.float64]]
+IndexArray = NDArray[np.int_]
+FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int_]
 
 
 # Type conversion functions

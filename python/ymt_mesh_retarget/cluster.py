@@ -2,11 +2,6 @@
 
 import collections
 
-from scipy.sparse import (
-    lil_matrix,
-)
-from scipy.spatial import cKDTree
-
 import numpy as np
 from maya import (
     cmds,
@@ -15,6 +10,10 @@ from maya import (
 from maya.api import (
     OpenMaya as om,
 )
+from scipy.sparse import (
+    lil_matrix,
+)
+from scipy.spatial import cKDTree
 
 from . import util
 from .types import IntArray, MeshPath

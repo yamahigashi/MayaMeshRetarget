@@ -4,6 +4,8 @@
 from typing import Optional
 
 import numpy as np
+from maya import cmds
+from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 from Qt.QtCore import (
     QAbstractAnimation,
     QParallelAnimationGroup,
@@ -35,9 +37,6 @@ from Qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from maya import cmds
-from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
 from . import (
     inpaint,

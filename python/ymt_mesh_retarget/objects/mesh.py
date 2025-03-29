@@ -220,7 +220,7 @@ class MeshObject(RetargetableObject):
             return
 
         logger.info("Computing Laplacian & mass matrix via compute_laplacian_and_mass_matrix...")
-        L_csr, M_csr = compute_laplacian_and_mass_matrix(self.mesh_fn)  # (N×N), (N×N)  # noqa: N806
+        L_csr, M_csr = compute_laplacian_and_mass_matrix(self.mesh_fn)  # (N×N), (N×N)
 
         # 頂点座標を (N, 3) の numpy配列で取得
         points = self.get_points()  # 例: array([[x0,y0,z0],[x1,y1,z1],...]], shape=(N,3))
@@ -401,9 +401,9 @@ class MeshObject(RetargetableObject):
 
 
 def add_laplacian_entry_in_place(
-        L: sp.lil_matrix,  # noqa: N803
-        tri_positions: np.ndarray,
-        tri_indices: np.ndarray,
+    L: sp.lil_matrix,  # noqa: N803
+    tri_positions: "VertexArray",
+    tri_indices: "IndexArray",
 ) -> None:
     """Add laplacian entry in-place.
 
@@ -425,25 +425,25 @@ def add_laplacian_entry_in_place(
     v3 = tri_positions[2]
 
     # calculate cotangent
-    cotan1 = compute_cotangent(v2, v1, v3)
-    cotan2 = compute_cotangent(v1, v2, v3)
-    cotan3 = compute_cotangent(v1, v3, v2)
+    w12 = 0.5 * compute_cotangent(v3, v1, v2)
+    w23 = 0.5 * compute_cotangent(v1, v2, v3)
+    w31 = 0.5 * compute_cotangent(v2, v3, v1)
 
-    # update laplacian matrix
-    L[i1, i2] += cotan1
-    L[i2, i1] += cotan1
-    L[i1, i1] -= cotan1
-    L[i2, i2] -= cotan1
+    # # update laplacian matrix
+    L[i1, i1] += w12
+    L[i2, i2] += w12
+    L[i1, i2] -= w12
+    L[i2, i1] -= w12
 
-    L[i2, i3] += cotan2
-    L[i3, i2] += cotan2
-    L[i2, i2] -= cotan2
-    L[i3, i3] -= cotan2
+    L[i2, i2] += w23
+    L[i3, i3] += w23
+    L[i2, i3] -= w23
+    L[i3, i2] -= w23
 
-    L[i1, i3] += cotan3
-    L[i3, i1] += cotan3
-    L[i1, i1] -= cotan3
-    L[i3, i3] -= cotan3
+    L[i3, i3] += w31
+    L[i1, i1] += w31
+    L[i3, i1] -= w31
+    L[i1, i3] -= w31
 
 
 def add_area_in_place(
@@ -468,10 +468,10 @@ def add_area_in_place(
     area = 0.5 * np.linalg.norm(np.cross(v2 - v1, v3 - v1))
 
     for idx in tri_indices:
-        areas[idx] += area
+        areas[idx] += area / 3.0
 
 
-def compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[sp.csr_matrix, sp.dia_matrix]:
+def compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[sp.csr_array, sp.dia_array]:
     """Compute laplacian matrix from mesh.
 
     treat area as mass matrix.
@@ -479,7 +479,7 @@ def compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[sp.csr_matrix, 
 
     # initialize sparse laplacian matrix
     n_vertices = mesh.numVertices
-    L = sp.lil_matrix((n_vertices, n_vertices))  # noqa: N806
+    L = sp.lil_matrix((n_vertices, n_vertices))
     areas = np.zeros(n_vertices)
 
     # for each edge and face, calculate the laplacian entry and area
@@ -496,8 +496,12 @@ def compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[sp.csr_matrix, 
 
         face_iter.next()
 
-    L_csr = L.tocsr()  # noqa: N806
-    M_csr = sp.diags(areas)  # noqa: N806
+    L_csr = L.tocsr()
+    if areas.min() < 1e-12:
+        logger.warning("Some vertices have zero area. Setting them to 1e-12.")
+        areas = np.maximum(areas, 1e-12)
+
+    M_csr = sp.diags(areas, format="csr")
 
     return L_csr, M_csr
 

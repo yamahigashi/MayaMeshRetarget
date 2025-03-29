@@ -43,14 +43,14 @@ class DistanceScoring(IScoringComponent):
         """Compute score based on distance.
 
         Args:
-            context: Dictionary containing 'distance' key
+            context: Dictionary containing "distance" key
 
         Returns:
             float: Score value (higher is better)
         """
-        distance = context.get('distance', float('inf'))
+        distance = context.get("distance", float("inf"))
         # Convert distance to score (inverse relationship - closer is better)
-        if distance <= 0.0 or distance == float('inf'):
+        if distance <= 0.0 or distance == float("inf"):
             return 0.0
 
         # Exponential falloff for distance - closer points score higher
@@ -71,17 +71,17 @@ class RayQualityScoring(IScoringComponent):
         """Compute score based on ray quality.
 
         Args:
-            context: Dictionary containing 'raycast_result' key
+            context: Dictionary containing "raycast_result" key
 
         Returns:
             float: Score value (higher is better)
         """
-        raycast_result = context.get('raycast_result')
+        raycast_result = context.get("raycast_result")
         if raycast_result is None:
             return 0.0
 
-        ray_weight = getattr(raycast_result, 'weight', 0.0)
-        relate_distance = getattr(raycast_result, 'relate_distance', 1.0)
+        ray_weight = getattr(raycast_result, "weight", 0.0)
+        relate_distance = getattr(raycast_result, "relate_distance", 1.0)
 
         # Ray quality score - higher weight and lower relative distance is better
         return self.weight * ray_weight * (1.0 - min(1.0, relate_distance))
@@ -101,13 +101,13 @@ class NormalScoring(IScoringComponent):
         """Compute score based on normal vector similarity.
 
         Args:
-            context: Dictionary containing 'normal_src' and 'normal_tar' keys
+            context: Dictionary containing "normal_src" and "normal_tar" keys
 
         Returns:
             float: Score value (higher is better)
         """
-        normal_src = context.get('normal_src')
-        normal_tar = context.get('normal_tar')
+        normal_src = context.get("normal_src")
+        normal_tar = context.get("normal_tar")
 
         if normal_src is None or normal_tar is None:
             return 0.0
@@ -143,13 +143,13 @@ class WeightVectorScoring(IScoringComponent):
         """Compute score based on weight vector similarity.
 
         Args:
-            context: Dictionary containing 'weights_src' and 'weights_tar' keys
+            context: Dictionary containing "weights_src" and "weights_tar" keys
 
         Returns:
             float: Score value (higher is better)
         """
-        weights_src = context.get('weights_src')
-        weights_tar = context.get('weights_tar')
+        weights_src = context.get("weights_src")
+        weights_tar = context.get("weights_tar")
 
         if weights_src is None or weights_tar is None:
             return 0.0
@@ -190,13 +190,13 @@ class LaplacianScoring(IScoringComponent):
         """Compute score based on Laplacian similarity.
 
         Args:
-            context: Dictionary containing 'laplacian_src' and 'laplacian_tar' keys
+            context: Dictionary containing "laplacian_src" and "laplacian_tar" keys
 
         Returns:
             float: Score value (higher is better)
         """
-        laplacian_src = context.get('laplacian_src')
-        laplacian_tar = context.get('laplacian_tar')
+        laplacian_src = context.get("laplacian_src")
+        laplacian_tar = context.get("laplacian_tar")
 
         if laplacian_src is None or laplacian_tar is None:
             return 0.0

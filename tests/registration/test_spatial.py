@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ymt_mesh_retarget.registration.spatial import BVH, BVHNode, AABB
+from ymt_mesh_retarget.registration.spatial import AABB, BVH, BVHNode
 
 
 def test_bvh_node_initialization():

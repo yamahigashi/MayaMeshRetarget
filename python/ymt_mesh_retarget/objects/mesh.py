@@ -15,6 +15,7 @@ from ..util import (
     get_mesh_fn,
     get_short_name,
     get_skin_cluster,
+    get_skin_weights,
     set_points,
     timeit,
 )
@@ -54,13 +55,19 @@ class MeshObject(RetargetableObject):
         self._is_laplacians_cached = False
         self._is_weights_cached = False
 
+    def precompute_data(self) -> None:
+        """Precompute all vertex data for the mesh."""
         self.precompute_vertex_normals()
         self.precompute_laplacians()
         self.precompute_weight_vectors()
 
-    def get_points(self, sampling_stride: int = 1) -> np.ndarray:
+    def get_points(self, sampling_stride: int = 1) -> "VertexArray":
         """メッシュの頂点をnumpy配列として取得."""
         return convert_points_to_numpy(self.dag_path, sampling_stride)
+
+    def get_smoothed_points(self, iterations: int = 10, smoothing_factor: float = 0.8) -> "VertexArray":
+        """Return smoothed vertex positions using Laplacian smoothing."""
+        return laplacian_smooth(self.mesh_fn, iterations, smoothing_factor)
 
     def get_transforms(self) -> list[dict]:
         """メッシュの頂点座標をtransforms配列として取得."""
@@ -220,7 +227,7 @@ class MeshObject(RetargetableObject):
             return
 
         logger.info("Computing Laplacian & mass matrix via compute_laplacian_and_mass_matrix...")
-        L_csr, M_csr = compute_laplacian_and_mass_matrix(self.mesh_fn)  # (N×N), (N×N)
+        L_csr = compute_cotangent_laplacian(self.dag_path)  # (N, N) csr_matrix
 
         # 頂点座標を (N, 3) の numpy配列で取得
         points = self.get_points()  # 例: array([[x0,y0,z0],[x1,y1,z1],...]], shape=(N,3))
@@ -232,13 +239,6 @@ class MeshObject(RetargetableObject):
         # 単純化のため列ごとに行う例：
         for dim in range(3):
             laplacian_coords[:, dim] = L_csr.dot(points[:, dim])
-
-        # もし質量行列 M も使う場合 (Mが対角行列なので各要素を割り算するイメージ):
-        # for dim in range(3):
-        #     Lp_dim = L_csr.dot(points[:, dim])   # shape=(N,)
-        #     # areaが0だと割り算できないので注意
-        #     # M_csr.diagonal() が各頂点の面積データになる
-        #     # 例: laplacian_coords[:, dim] = Lp_dim / np.maximum(M_csr.diagonal(), 1e-8)
 
         # 辞書キャッシュに格納する
         for i in range(n_vertices):
@@ -400,121 +400,396 @@ class MeshObject(RetargetableObject):
         )
 
 
-def add_laplacian_entry_in_place(
-    L: sp.lil_matrix,  # noqa: N803
-    tri_positions: "VertexArray",
-    tri_indices: "IndexArray",
-) -> None:
-    """Add laplacian entry in-place.
+def build_adjacency_list(dag_path: om.MDagPath) -> list[list[int]]:
+    """MItMeshVertex を使用し、各頂点に隣接する頂点のリストを返す。"""
+    mesh_vertex_iter = om.MItMeshVertex(dag_path)
+    adjacency_list = [[] for _ in range(mesh_vertex_iter.count())]
+
+    while not mesh_vertex_iter.isDone():
+        idx = mesh_vertex_iter.index()
+        connected_indices = mesh_vertex_iter.getConnectedVertices()
+
+        for cidx in connected_indices:
+            adjacency_list[idx].append(cidx)
+
+        mesh_vertex_iter.next()
+
+    return adjacency_list
+
+
+def build_laplacian_matrix_from_adjacency(adjacency_list: list[list[int]]) -> np.ndarray:
+    """隣接リストから一様重みのラプラシアン行列 L を作成する。
+
+    L は (N x N) の NumPy array
+    """
+    N = len(adjacency_list)
+    L = np.zeros((N, N), dtype=np.float64)
+
+    for i, neighbors in enumerate(adjacency_list):
+        deg_i = len(neighbors)
+        if deg_i == 0:
+            # 孤立点(通常メッシュでは考えにくい)を回避するため
+            L[i, i] = 1.0
+            continue
+
+        # 対角成分
+        L[i, i] = 1.0
+        # 非対角成分
+        for j in neighbors:
+            L[i, j] = -1.0 / deg_i
+
+    return L
+
+
+def compute_uniform_weight_laplacian(mesh_fn: om.MFnMesh) -> sp.csr_array:
+    """一様重みのラプラシアン行列を計算する。"""
+    adjacency_list = build_adjacency_list(mesh_fn.dagPath())
+    L = build_laplacian_matrix_from_adjacency(adjacency_list)
+
+    return sp.csr_matrix(L).tocsr()
+
+
+def compute_cotangent_laplacian(dag_path: om.MDagPath) -> sp.csr_array:
+    """Compute cotangent Laplacian matrix for the given mesh.
 
     Args:
-        L: Laplacian matrix (**modified in-place**) (n_vertices, n_vertices)
-        tri_positions: Triangle positions
-        tri_indices: Triangle indices
+        dag_path (om.MDagPath): DAG path to the mesh
 
     Returns:
-        None
+        sp.csr_array: Computed cotangent Laplacian matrix
     """
 
-    i1 = tri_indices[0]
-    i2 = tri_indices[1]
-    i3 = tri_indices[2]
+    # メッシュ関数セットを作成
+    mesh_fn = om.MFnMesh(dag_path)
 
-    v1 = tri_positions[0]
-    v2 = tri_positions[1]
-    v3 = tri_positions[2]
+    # 頂点数と座標の取得
+    num_vertices = mesh_fn.numVertices
+    points = mesh_fn.getPoints(om.MSpace.kWorld)  # ワールド座標 (または kObject)
 
-    # calculate cotangent
-    w12 = 0.5 * compute_cotangent(v3, v1, v2)
-    w23 = 0.5 * compute_cotangent(v1, v2, v3)
-    w31 = 0.5 * compute_cotangent(v2, v3, v1)
+    # --------------------------------------------------
+    #  辺ごとの重みを保持するための辞書を用意
+    #  key: (minIndex, maxIndex) のタプル, value: 重み (cotangent の和)
+    # --------------------------------------------------
+    edgeWeights = {}
 
-    # # update laplacian matrix
-    L[i1, i1] += w12
-    L[i2, i2] += w12
-    L[i1, i2] -= w12
-    L[i2, i1] -= w12
+    def sorted_edge_key(i: int, j: int) -> tuple[int, int]:
+        """Sort two indices and return as a tuple."""
+        return (i, j) if i < j else (j, i)
 
-    L[i2, i2] += w23
-    L[i3, i3] += w23
-    L[i2, i3] -= w23
-    L[i3, i2] -= w23
+    # --------------------------------------------------
+    #  フェイスごとに三角分割してコタンジェント重みを計算
+    # --------------------------------------------------
+    # getTriangles() を使うと、三角分割された頂点インデックスが取得できる。
+    # 戻り値: (triangleCounts, triangleVertices)
+    #  - triangleCounts は各フェイスがいくつの三角形に分割されたかを示すリスト
+    #  - triangleVertices は分割された三角形の頂点インデックスを並べた1次元リスト
+    triangle_counts, triangle_vertices = mesh_fn.getTriangles()
 
-    L[i3, i3] += w31
-    L[i1, i1] += w31
-    L[i3, i1] -= w31
-    L[i1, i3] -= w31
+    # triangle_vertices はフェイス順に三角形が並んでおり、
+    # 1つの三角形につき3頂点(インデックス)が続く。
+    triIndex = 0  # triangle_vertices を走査するためのカウンタ
 
+    # 各フェイスに対応する三角形数に従って取り出し
+    for _face_id, tri_count in enumerate(triangle_counts):
+        for _ in range(tri_count):
+            # 三角形の頂点インデックスを取得
+            i0 = triangle_vertices[triIndex]
+            i1 = triangle_vertices[triIndex + 1]
+            i2 = triangle_vertices[triIndex + 2]
+            triIndex += 3
 
-def add_area_in_place(
-    areas: np.ndarray,
-    tri_positions: np.ndarray,
-    tri_indices: np.ndarray,
-) -> None:
-    """Add area in-place.
+            # 各頂点のワールド座標を numpy array に変換
+            p0 = np.array([points[i0].x, points[i0].y, points[i0].z], dtype=np.float64)
+            p1 = np.array([points[i1].x, points[i1].y, points[i1].z], dtype=np.float64)
+            p2 = np.array([points[i2].x, points[i2].y, points[i2].z], dtype=np.float64)
 
-    Args:
-        areas: Areas (**modified in-place**) (n_vertices,)
-        tri_positions: Triangle positions
-        tri_indices: Triangle indices
+            # 三角形の辺と向かい合う角度のコタンジェントを求める
+            # cot(α) = (b^2 + c^2 - a^2) / (4 * 面積) などの公式を利用
+            # ただし直接内積・外積を使って角度αを求め、cot(α) = cos(α)/sin(α) としてもよい
 
-    Returns:
-        None
-    """
+            # 三辺ベクトル
+            v0 = p1 - p0
+            v1 = p2 - p1
+            v2 = p0 - p2
 
-    v1 = tri_positions[0]
-    v2 = tri_positions[1]
-    v3 = tri_positions[2]
-    area = 0.5 * np.linalg.norm(np.cross(v2 - v1, v3 - v1))
+            # 各辺の長さ
+            l0 = np.linalg.norm(v0)  # 辺 (p0, p1)
+            l1 = np.linalg.norm(v1)  # 辺 (p1, p2)
+            l2 = np.linalg.norm(v2)  # 辺 (p2, p0)
 
-    for idx in tri_indices:
-        areas[idx] += area / 3.0
+            # 三角形の面積 (2D の外積の大きさ / 2)
+            # 3Dベクトルの場合でも、(v0 × (p2 - p0)) の大きさ/2 などで算出できる
+            # ここでは v0 × v(三番目) の絶対値 / 2
+            crossVec = np.cross(v0, p2 - p0)
+            area = np.linalg.norm(crossVec) * 0.5
+            if area < 1e-12:
+                # 面積が極端に小さい場合の対策としてスキップや continue する処理を加味しても良い
+                continue
 
+            # 辺 (p1, p2) に対向する角度は頂点 p0 における角度
+            # cot(α0)
+            # cosAlpha0 = np.dot(v0, p2 - p0) / (l0 * np.linalg.norm(p2 - p0))
+            # sin(α0) は外積からも求められるが、面積を使う方が数値的に安定しやすい
+            # 三角形面積 = 0.5 * l0 * l(p2-p0) * sin(α0) なので
+            # sinAlpha0 = (2.0 * area) / (l0 * np.linalg.norm(p2 - p0))
+            # 安全に arccos, arcsin してから cot(α) = cos(α)/sin(α) にしても良いが、
+            # 面積から cot(α) を求める直接式:
+            #   cot(α) = (l1^2 + l2^2 - l0^2) / (4 * area)
+            # を利用することが多いです。
+            cotAlpha0 = (l1**2 + l2**2 - l0**2) / (4.0 * area)
+            cotAlpha1 = (l2**2 + l0**2 - l1**2) / (4.0 * area)
+            cotAlpha2 = (l0**2 + l1**2 - l2**2) / (4.0 * area)
 
-def compute_laplacian_and_mass_matrix(mesh: om.MFnMesh) -> tuple[sp.csr_array, sp.dia_array]:
-    """Compute laplacian matrix from mesh.
+            # ----------------------------------------------------
+            #  コタンジェント重みは、辺 (i, j) に対して
+            #    w_ij = ( cot(α) + cot(β) ) / 2
+            #  として使われることが多い (2つの隣接三角形の角度α, β の和)
+            #
+            # しかし、ここでは各三角形について局所的に以下を加算:
+            #    w(i0, i1) += cotAlpha2
+            #    w(i1, i2) += cotAlpha0
+            #    w(i2, i0) += cotAlpha1
+            #
+            # というように、三角形の対向角に対応するコタンジェントを各辺に対して加算。
+            # 後で隣接三角形と合算されることで、結果的に (cot(α) + cot(β)) が入るイメージ。
+            # ----------------------------------------------------
+            # 三角形でのエッジ (i0, i1) に対する重み
+            edgeKey01 = sorted_edge_key(i0, i1)
+            edgeWeights[edgeKey01] = edgeWeights.get(edgeKey01, 0.0) + cotAlpha2
 
-    treat area as mass matrix.
-    """
+            # エッジ (i1, i2)
+            edgeKey12 = sorted_edge_key(i1, i2)
+            edgeWeights[edgeKey12] = edgeWeights.get(edgeKey12, 0.0) + cotAlpha0
 
-    # initialize sparse laplacian matrix
-    n_vertices = mesh.numVertices
-    L = sp.lil_matrix((n_vertices, n_vertices))
-    areas = np.zeros(n_vertices)
+            # エッジ (i2, i0)
+            edgeKey20 = sorted_edge_key(i2, i0)
+            edgeWeights[edgeKey20] = edgeWeights.get(edgeKey20, 0.0) + cotAlpha1
 
-    # for each edge and face, calculate the laplacian entry and area
-    face_iter = om.MItMeshPolygon(mesh.dagPath())
-    while not face_iter.isDone():
+    # --------------------------------------------------
+    #  疎行列用のデータ格納リスト (row, col, data)
+    # --------------------------------------------------
+    rowIndices = []
+    colIndices = []
+    values = []
 
-        n_tri = face_iter.numTriangles()
+    # 対角成分を求めるために各頂点 i ごとの重み合計を一時的に保持
+    diagVal = np.zeros(num_vertices, dtype=np.float64)
 
-        for j in range(n_tri):
+    # エッジ重みを L 行列に反映
+    # L[i,j] = - w_ij,  L[i,i] = Σ_j w_ij
+    for (i, j), w in edgeWeights.items():
+        # i と j が接続されている場合、L[i,j] と L[j,i] に -w を入れる
+        # ただし最終的には対角成分に w を加算する
+        rowIndices.append(i)
+        colIndices.append(j)
+        values.append(-w)
 
-            tri_positions, tri_indices = face_iter.getTriangle(j)
-            add_laplacian_entry_in_place(L, tri_positions, tri_indices)
-            add_area_in_place(areas, tri_positions, tri_indices)
+        rowIndices.append(j)
+        colIndices.append(i)
+        values.append(-w)
 
-        face_iter.next()
+        # 対角成分に加算
+        diagVal[i] += w
+        diagVal[j] += w
 
+    # 対角成分を追加
+    for i in range(num_vertices):
+        rowIndices.append(i)
+        colIndices.append(i)
+        values.append(diagVal[i])
+
+    # scipy.sparse で (num_vertices x num_vertices) の疎行列を生成
+    L = sp.coo_matrix((values, (rowIndices, colIndices)), shape=(num_vertices, num_vertices))
+
+    # 必要に応じて形式を変換 (例: csr_matrix)
     L_csr = L.tocsr()
-    if areas.min() < 1e-12:
-        logger.warning("Some vertices have zero area. Setting them to 1e-12.")
-        areas = np.maximum(areas, 1e-12)
 
-    M_csr = sp.diags(areas, format="csr")
+    # normalize by max value
+    max_val = np.abs(L_csr.data).max()
+    L_csr.data /= max_val
 
-    return L_csr, M_csr
+    return L_csr
 
 
-def compute_cotangent(v1: om.MPoint, v2: om.MPoint, v3: om.MPoint) -> float:
-    """Compute cotangent from three points."""
+@timeit
+def laplacian_smooth(
+    mesh_fn: om.MFnMesh,
+    iterations: int = 10,
+    smoothing_factor: float = 0.5,
+    keep_border: bool = True,
+    method: str = "uniform",
+) -> "VertexArray":
+    """Apply Laplacian smoothing (cotangent-based) to the mesh's vertex positions.
 
-    edeg1 = v2 - v1
-    edeg2 = v3 - v1
+    This function:
+      - Computes (if not precomputed) the Laplacian (L) and mass (M) matrices.
+      - Iteratively updates the vertex positions as:
+            X_{t+1} = X_t - α * M⁻¹ L X_t
+        where α = smoothing_factor.
+      - Optionally keeps boundary vertices fixed.
 
-    norm1 = edeg1 ^ edeg2
+    TODO: Implement stride parameter for faster processing.
 
-    area = norm1.length()
-    cotan = edeg1 * edeg2 / area
+    Args:
+        mesh_fn (om.MFnMesh):
+            Maya MFnMesh object for the mesh to smooth.
+        iterations (int, optional):
+            Number of smoothing iterations. Defaults to 10.
+        smoothing_factor (float, optional):
+            Blend factor (α) used in the update step. Typically in the range (0, 1).
+        keep_border (bool, optional):
+            If True, boundary vertices remain fixed in place. Defaults to True.
+        method (str, optional):
+            Smoothing method to use. Defaults to "uniform". Options: "uniform", "cotangent".
 
-    return cotan
+    Returns:
+        np.ndarray:
+            A (num_vertices, 3) array of the final smoothed positions.
+    """
+    num_vertices = mesh_fn.numVertices
+    if num_vertices == 0:
+        logger.warning("Mesh has no vertices. Returning empty array.")
+        return np.zeros((0, 3), dtype=np.float64)
+
+    # 1) Get the current world-space positions of the mesh
+    mesh_dag = mesh_fn.dagPath()
+    positions = convert_points_to_numpy(mesh_dag)  # shape: (N, 3)
+
+    # 2) Compute the Laplacian (L) and mass (M) matrices
+    logger.info("Computing cotangent-based Laplacian for smoothing...")
+    if method == "uniform":
+        L_csr = compute_uniform_weight_laplacian(mesh_fn)
+    elif method == "cotangent":
+        L_csr = compute_cotangent_laplacian(mesh_dag)
+    else:
+        raise ValueError(f"Invalid smoothing method: {method}")
+
+    # 3) Identify border (boundary) vertices if keep_border = True
+    border_mask = np.zeros(num_vertices, dtype=bool)
+    if keep_border:
+        vert_iter = om.MItMeshVertex(mesh_fn.object())
+        while not vert_iter.isDone():
+            idx = vert_iter.index()
+            if vert_iter.onBoundary():
+                border_mask[idx] = True
+            vert_iter.next()
+
+    # 4) Iteratively apply Laplacian smoothing
+    for _ in range(iterations):
+        # (N, 3) result of L * X
+        LX = L_csr.dot(positions)
+
+        # Perform the update
+        new_positions = positions - smoothing_factor * LX
+
+        # If keep_border, restore border vertices to original positions
+        if keep_border:
+            new_positions[border_mask] = positions[border_mask]
+
+        positions = new_positions
+
+    # check for NaNs or infs
+    if np.any(np.isnan(positions)) or np.any(np.isinf(positions)):
+        logger.warning("NaN or inf values found in smoothed positions. Reverting to original positions.")
+        positions = convert_points_to_numpy(mesh_dag)
+
+    return positions
+
+
+def create_smoothed_mesh(
+    mesh_path: Union[str, list[str]],
+    iterations: int = 10,
+    smoothing_factor: float = 0.5,
+    method: str = "uniform",
+    parent: Optional[str] = None,
+) -> Union[MeshObject, list[MeshObject]]:
+    """Create a smoothed mesh object from the input mesh.
+
+    Args:
+        mesh_path (str):
+            Full path to the input mesh.
+        iterations (int, optional):
+            Number of smoothing iterations. Defaults to 10.
+        smoothing_factor (float, optional):
+            Blend factor (α) used in the update step. Typically in the range (0, 1).
+        method (str, optional):
+            Smoothing method to use. Defaults to "uniform". Options: "uniform", "cotangent".
+        parent (str, optional):
+            Parent object name for the new mesh. Defaults to None.
+
+    Returns:
+        MeshObject:
+            A new MeshObject instance representing the smoothed mesh.
+    """
+    if isinstance(mesh_path, list):
+        result = []
+        for path in mesh_path:
+            smoothed_mesh = create_smoothed_mesh(path, iterations, smoothing_factor)
+            result.append(smoothed_mesh)
+        return result
+
+    mesh_obj = MeshObject.create_from_path(mesh_path)
+    smoothed_points = laplacian_smooth(
+        mesh_obj.mesh_fn,
+        iterations,
+        smoothing_factor,
+        keep_border=False,
+        method=method,
+    )
+    smoothed_mesh = mesh_obj.duplicate(suffix="_smoothed", parent=parent)
+    points = om.MPointArray()
+    for p in smoothed_points:
+        points.append(om.MPoint(p[0], p[1], p[2]))
+    set_points(smoothed_mesh.name, points)
+    return smoothed_mesh
+
+
+def create_shrunk_mesh(
+    mesh_path: Union[str, list[str]],
+    factor: float = 0.5,
+) -> Union[MeshObject, list[MeshObject]]:
+    """Create a smoothed mesh object from the input mesh.
+
+    Args:
+        mesh_path (str):
+            Full path to the input mesh.
+        factor (float, optional):
+            Shrink factor. Defaults to 0.5.
+
+    Returns:
+        MeshObject:
+            A new MeshObject instance representing the smoothed mesh.
+    """
+    from ..registration.alignment import (
+        get_joint_tree,
+        shrink_mesh_toward_skeleton,
+    )
+
+    if isinstance(mesh_path, list):
+        result = []
+        for path in mesh_path:
+            smoothed_mesh = create_shrunk_mesh(path, factor)
+            result.append(smoothed_mesh)
+        return result
+
+    mesh_obj = MeshObject.create_from_path(mesh_path)
+    vertices = convert_points_to_numpy(mesh_obj.dag_path)
+    weights, joints = get_skin_weights(mesh_obj.dag_path)
+    joint_paths, joint_group, bone_group = get_joint_tree(joints)
+
+    shrinked_vertices = shrink_mesh_toward_skeleton(
+        vertices=vertices,
+        joint_group=joint_group,
+        bone_group=bone_group,
+        weights=weights,
+        shrink_factor=factor,
+    )
+
+    shrinked_mesh = mesh_obj.duplicate(suffix="_shrinked")
+    points = om.MPointArray()
+    for p in shrinked_vertices:
+        points.append(om.MPoint(p[0], p[1], p[2]))
+
+    set_points(shrinked_mesh.name, points)
+
+    return shrinked_mesh

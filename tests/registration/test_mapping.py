@@ -1,18 +1,13 @@
-import numpy as np
-import pytest
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pytest
+
+from ymt_mesh_retarget.registration.core import BoneNode, JointNode, MappingNode, MappingResult, RegistrationOptions
 from ymt_mesh_retarget.registration.mapping import (
+    create_optimized_correspondence_points,
     find_nearest_vertex_index,
     get_mapping_points,
-    create_optimized_correspondence_points
-)
-from ymt_mesh_retarget.registration.core import (
-    JointNode,
-    BoneNode,
-    MappingResult, 
-    MappingNode,
-    RegistrationOptions
 )
 
 

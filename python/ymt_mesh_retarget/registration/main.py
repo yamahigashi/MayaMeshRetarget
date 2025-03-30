@@ -9,14 +9,13 @@ from typing import Optional, Union
 import numpy as np
 from maya import cmds
 from maya.api import OpenMaya as om
-from maya.api import OpenMayaAnim as oma
 from numpy.typing import NDArray
 
 from ..logger import logger
 from ..objects import MeshObject, create_retargetable_object
 from ..util import (
     autokey_off,
-    get_skin_cluster,
+    get_skin_weights,
     one_undo,
     timeit,
     viewport_off,
@@ -25,6 +24,8 @@ from .alignment import (
     calculate_alignment_transform,
     get_joint_tree,
     match_joint_trees,
+    project_shrunk_vertices_nearest,
+    shrink_mesh_toward_skeleton,
 )
 
 # Import from submodules
@@ -233,24 +234,30 @@ class MeshRegistration:
         if self.options.use_scoring_components and self.options.precompute_mesh_data:
             self._precompute_mesh_data()
 
-        # Get information from meshes
-        source_points = self.source_mesh.get_points()
-        target_points = self.target_mesh.get_points()
-
         # Get skinning weight information
-        source_weights, source_joints = self._get_skin_weights(self.source_mesh)
-        target_weights, target_joints = self._get_skin_weights(self.target_mesh)
+        source_weights, source_joints = get_skin_weights(self.source_mesh.dag_path)
+        target_weights, target_joints = get_skin_weights(self.target_mesh.dag_path)
 
         # Build joint trees if not already built
         if self.source_joint_group is None or self.target_joint_group is None:
             self.source_joint_paths, self.source_joint_group, self.source_bone_group = get_joint_tree(source_joints)
             self.target_joint_paths, self.target_joint_group, self.target_bone_group = get_joint_tree(target_joints)
 
+        if self.source_joint_group is None or self.target_joint_group is None:
+            raise ValueError("No joint hierarchy found. Check skin cluster and joint binding.")
+
+        if len(self.source_joint_group) == 0 or len(self.target_joint_group) == 0:
+            raise ValueError("No joints found. Check skin cluster and joint binding.")
+
+        if self.source_bone_group is None or self.target_bone_group is None:
+            raise ValueError("No body hierarchy found. Check skin cluster and joint binding.")
+
         # For space alignment between source and target
         transform_matrix = None
         original_joint_positions = None
         original_joint_matrices = None
 
+        self.options.align_spaces = False
         if self.options.align_spaces:
             logger.info("Aligning source bones to target space...")
             transform_matrix = calculate_alignment_transform(
@@ -281,6 +288,27 @@ class MeshRegistration:
             else:
                 logger.warning("Alignment failed. Skipping space alignment.")
 
+        # Get information from meshes
+        # source_points = self.source_mesh.get_points()
+        # target_points = self.target_mesh.get_points()
+        source_points = self.source_mesh.get_smoothed_points(iterations=9, smoothing_factor=0.95)
+        target_points = self.target_mesh.get_smoothed_points(iterations=8, smoothing_factor=0.8)
+
+        shrinked_src_vertices = shrink_mesh_toward_skeleton(
+            vertices=source_points,
+            joint_group=self.source_joint_group,
+            bone_group=self.source_bone_group,
+            weights=source_weights,
+            shrink_factor=0.4,
+        )
+        shrinked_tar_vertices = shrink_mesh_toward_skeleton(
+            vertices=target_points,
+            joint_group=self.target_joint_group,
+            bone_group=self.target_bone_group,
+            weights=target_weights,
+            shrink_factor=0.2,
+        )
+
         # Get the Maya mesh triangles
         logger.info("Getting source mesh triangle information...")
         mesh_fn = self.target_mesh.mesh_fn
@@ -290,7 +318,8 @@ class MeshRegistration:
         # Calculate mapping points
         logger.info("Calculating mapping points...")
         src_mapping_points = get_mapping_points(
-            source_points,
+            # source_points,
+            shrinked_src_vertices,
             self.source_joint_group,
             self.source_bone_group,
             source_weights,
@@ -308,7 +337,7 @@ class MeshRegistration:
             self.source_mesh,
             self.target_mesh,
             src_mapping_points,
-            tar_triangles=target_points,
+            tar_triangles=shrinked_tar_vertices,
             tar_triangle_indices=tar_triangle_indices,
             src_joint_group=self.source_joint_group,
             tar_joint_group=self.target_joint_group,
@@ -318,6 +347,50 @@ class MeshRegistration:
         )
         logger.info(f"Raycast results: {len(raycast_result_array)}")
 
+        # logger.info("Generating additional correspondence candidates via skeleton shrink...")
+        # shrinked_src_vertices = shrink_mesh_toward_skeleton(
+        #     vertices=source_points,
+        #     joint_group=self.source_joint_group,
+        #     bone_group=self.source_bone_group,
+        #     weights=source_weights,
+        #     shrink_factor=0.9,
+        # )
+        #
+        # shrinked_tar_vertices = shrink_mesh_toward_skeleton(
+        #     vertices=target_points,
+        #     joint_group=self.target_joint_group,
+        #     bone_group=self.target_bone_group,
+        #     weights=target_weights,
+        #     shrink_factor=0.4,
+        # )
+        #
+        # shrink_candidates = project_shrunk_vertices_nearest(
+        #     shrunk_vertices=shrinked_src_vertices,
+        #     target_vertices=shrinked_tar_vertices,
+        #     k=1,
+        # )
+        #
+        # # ※ ここでは、RaycastResult の triangle_index を -1 として区別する
+        # from .core import RaycastResult
+        # for cp in shrink_candidates:
+        #     src_idx = cp.source_index
+        #     # 収縮頂点位置を候補の出発点として利用
+        #     from_point = source_points[src_idx]
+        #     # 対象メッシュの頂点位置はすでに取得済みの target_points を利用
+        #     target_point = target_points[cp.target_index]
+        #     result = RaycastResult(
+        #         from_point=from_point,
+        #         point=target_point,
+        #         triangle_index=-1,  # -1 で収縮由来候補であることを示す
+        #         vertex_indices=(cp.target_index, -1, -1),
+        #         weight=cp.score,
+        #         relate_distance=1.0,  # 初期値; 必要なら距離などで再計算可
+        #     )
+        #     # 追加候補を、対応するソース頂点の候補リストに追加
+        #     # ※ ここでは、src_mapping_points のインデックスと、source_points の順序が一致している前提です
+        #     raycast_result_array[src_idx].append(result)
+
+        #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         # Create correspondence points
         self.correspondence_points = create_optimized_correspondence_points(
             raycast_result_array,
@@ -338,24 +411,20 @@ class MeshRegistration:
         source_indices = [cp.source_index for cp in self.correspondence_points]
         target_indices = [cp.target_index for cp in self.correspondence_points]
 
-        # Get points using the mesh function sets
-        source_mesh_fn = self.source_mesh.mesh_fn
-        target_mesh_fn = self.target_mesh.mesh_fn
-
         # Create point arrays
-        source_points = np.zeros((len(source_indices), 3))
-        target_points = np.zeros((len(target_indices), 3))
+        correspond_src_points = np.zeros((len(source_indices), 3))
+        correspond_tar_points = np.zeros((len(target_indices), 3))
 
         # Extract vertex positions directly from mesh function sets
         for i, idx in enumerate(source_indices):
             if idx >= 0:  # Skip invalid indices
-                point = source_mesh_fn.getPoint(idx, om.MSpace.kWorld)
-                source_points[i] = [point.x, point.y, point.z]
+                # point = source_mesh_fn.getPoint(idx, om.MSpace.kWorld)
+                correspond_src_points[i] = source_points[idx]
 
         for i, idx in enumerate(target_indices):
             if idx >= 0:  # Skip invalid indices
-                point = target_mesh_fn.getPoint(idx, om.MSpace.kWorld)
-                target_points[i] = [point.x, point.y, point.z]
+                # point = target_mesh_fn.getPoint(idx, om.MSpace.kWorld)
+                correspond_tar_points[i] = target_points[idx]
 
         # Restore original coordinates if alignment was used
         if self.options.align_spaces and transform_matrix is not None and original_joint_positions is not None:
@@ -373,77 +442,9 @@ class MeshRegistration:
                 cmds.xform(joint.path.fullPathName(), ws=True, m=joint.matrix)
 
         logger.info("Correspondence search completed.")
-        logger.info(f"Source points: {source_points.shape}, Target points: {target_points.shape}")
+        logger.info(f"Source points: {correspond_src_points.shape}, Target points: {correspond_tar_points.shape}")
 
-        return source_points, target_points
-
-    def _get_skin_weights(self, mesh_obj: MeshObject) -> tuple[list[list[float]], list[str]]:
-        """Get skinning weight information from mesh.
-
-        Args:
-            mesh_obj: Mesh object
-
-        Returns:
-            Tuple containing:
-            - List of skinning weights per vertex
-            - List of joint names
-        """
-        # Find skin cluster
-        fn_skin = self._find_skin_cluster(mesh_obj.dag_path)
-        if not fn_skin:
-            raise ValueError(f"No skin cluster found for mesh: {mesh_obj.name}")
-
-        # Get joint information
-        influence_objects = fn_skin.influenceObjects()  # type: om.MDagPathArray
-        num_influences = len(influence_objects)
-
-        # Create list of joint names
-        joint_names = []
-        for i in range(len(influence_objects)):
-            dag_path = influence_objects[i]
-            joint_name = dag_path.fullPathName()
-            joint_names.append(joint_name)
-
-        # Get weights for each vertex
-        mesh_fn = mesh_obj.mesh_fn
-        num_vertices = mesh_fn.numVertices
-
-        # Create vertex component
-        vert_indices = om.MIntArray(list(range(num_vertices)))
-        vert_component = om.MFnSingleIndexedComponent().create(om.MFn.kMeshVertComponent)
-        om.MFnSingleIndexedComponent(vert_component).addElements(vert_indices)
-
-        # Create influence indices
-        influence_indices = om.MIntArray(list(range(len(influence_objects))))
-
-        # Get skin weights
-        weights = fn_skin.getWeights(mesh_obj.dag_path, vert_component, influence_indices)
-
-        # Convert to list format
-        weights_list = []
-        for i in range(num_vertices):
-            vertex_weights = []
-            for j in range(num_influences):
-                weight = weights[i * num_influences + j]
-                vertex_weights.append(weight)
-            weights_list.append(vertex_weights)
-
-        return weights_list, joint_names
-
-    def _find_skin_cluster(self, mesh_path: om.MDagPath) -> Optional[oma.MFnSkinCluster]:
-        """Find skin cluster for mesh.
-
-        Args:
-            mesh_path: Mesh DAG path
-
-        Returns:
-            Skin cluster function set or None if not found
-        """
-        try:
-            return get_skin_cluster(mesh_path)
-        except ValueError as e:
-            logger.warning(f"{e}")
-            return None
+        return correspond_src_points, correspond_tar_points
 
     def visualize_correspondences(self, line_thickness: int = 1) -> str:
         """Visualize correspondence points in the Maya viewport.
@@ -687,7 +688,6 @@ def visualize_correspondences(
         processed_scores = [cp.score for cp in correspondence_points]
     # Create a line for each correspondence point
     for i, (cp, score) in enumerate(zip(correspondence_points, processed_scores)):
-        logger.debug(f"Creating correspondence line {cp.source_index} -> {cp.target_index} {score}")
         if cp.source_index < 0 or cp.target_index < 0:
             continue
 

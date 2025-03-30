@@ -7,42 +7,21 @@ import typing
 from typing import Any, Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
 from ..logger import logger
 from ..util import get_short_name, timeit
-from .core import CorrespondencePoint, MappingNode, MappingResult, RegistrationOptions, Vector3
+from .core import CorrespondencePoint, MappingNode, MappingResult, RegistrationOptions
 
 
 if typing.TYPE_CHECKING:
     from ..objects.mesh import MeshObject
+    from ..types import VertexArray
     from .core import BoneNode, JointNode, RaycastResult
-
-
-def find_nearest_vertex_index(position: Vector3, triangle_idx: int, raycast_data: Any) -> int:  # noqa: ARG001
-    """Find the nearest vertex index to the given position.
-
-    This function determines the closest vertex to a point (e.g., ray intersection point)
-    using triangle information.
-
-    Args:
-        position: The position to find nearest vertex for
-        triangle_idx: The triangle index
-        raycast_data: Additional information about the raycast
-
-    Returns:
-        The index of the nearest vertex
-    """
-    # This is a placeholder implementation that should be improved
-    # In a real implementation, we would use mesh topology information
-
-    # For now, return -1 to indicate not implemented
-    return -1
 
 
 @timeit
 def get_mapping_points(
-    target_points: NDArray[np.float64],
+    target_points: "VertexArray",
     target_joint_group: list["JointNode"],
     target_bone_group: list["BoneNode"],
     target_weights: list[list[float]],
@@ -165,7 +144,7 @@ def get_mapping_points(
 def create_optimized_correspondence_points(
     raycast_result_array: list[list["RaycastResult"]],
     src_mapping_points: list[MappingResult],
-    source_points: NDArray[np.float64],
+    source_points: "VertexArray",
     max_points_per_target: int = 1,
     min_weight_threshold: float = 0.01,
     source_mesh: Optional["MeshObject"] = None,

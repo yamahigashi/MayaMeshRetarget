@@ -1,7 +1,4 @@
-"""Weight transfer utilities for mesh registration.
-
-This module provides functions for transferring skinning weights between meshes.
-"""
+"""Weights module."""
 
 import numpy as np
 from maya import cmds, mel

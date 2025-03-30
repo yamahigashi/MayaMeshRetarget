@@ -1,9 +1,10 @@
-import numpy as np
-import pytest
 from unittest.mock import patch
 
-from ymt_mesh_retarget.registration.weights import get_weight_distance
+import numpy as np
+import pytest
+
 from ymt_mesh_retarget.registration.core import TriangleWeightIndex
+from ymt_mesh_retarget.registration.weights import get_weight_distance
 
 
 @pytest.mark.skip(reason="Errors with mel.eval for progress bar")

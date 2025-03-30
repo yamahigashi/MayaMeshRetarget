@@ -1,12 +1,8 @@
 import numpy as np
 import pytest
-
 from maya import cmds
 
-from ymt_mesh_retarget.registration.alignment import (
-    calculate_umeyama_transform,
-    calculate_weighted_umeyama_transform
-)
+from ymt_mesh_retarget.registration.alignment import calculate_umeyama_transform, calculate_weighted_umeyama_transform
 
 
 def test_calculate_umeyama_transform():

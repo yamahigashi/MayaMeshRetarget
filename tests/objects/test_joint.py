@@ -3,7 +3,7 @@ import pytest
 from maya import cmds
 from maya.api import OpenMaya as om
 
-from ymt_mesh_retarget.registration.core import JointNode, BoneNode
+from ymt_mesh_retarget.registration.core import BoneNode, JointNode
 
 
 def test_joint_node_properties(simple_joint_hierarchy):

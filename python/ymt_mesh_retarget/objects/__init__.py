@@ -20,7 +20,7 @@ if TYPE_CHECKING:
         RetargetableArg = Union[str, np.ndarray, RetargetableObject]
 
 
-def create_retargetable_object(path: RetargetableArg) -> RetargetableObject:
+def create_retargetable_object(path: "RetargetableArg") -> RetargetableObject:
     """パスから適切なRetargetableObjectインスタンスを作成."""
     from .base import RetargetableObject
 

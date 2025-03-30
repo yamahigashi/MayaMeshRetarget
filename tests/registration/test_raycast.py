@@ -1,12 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
 
-from ymt_mesh_retarget.registration.raycast import (
-    RaycastEngine, 
-    StandardRaycastEngine,
-    get_raycast_engine
-)
+from ymt_mesh_retarget.registration.raycast import RaycastEngine, StandardRaycastEngine, get_raycast_engine
 
 
 class TestRaycastEngine:

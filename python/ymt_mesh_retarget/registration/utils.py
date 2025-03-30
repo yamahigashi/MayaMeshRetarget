@@ -21,7 +21,6 @@ if typing.TYPE_CHECKING:
     from ..objects import MeshObject
 
 
-@timeit
 def get_matched_info(
     src_joint_group: list[JointNode],
     tar_joint_group: list[JointNode],
@@ -154,6 +153,7 @@ def match_joint_positions(
     """
     # Get matched joints
     src_indices, tar_indices, _ = get_matched_info(src_joint_group, tar_joint_group)
+    logger.info(f"Matched {len(src_indices)} joints.")
 
     # Match joint translations
     for s_i, t_i in zip(src_indices, tar_indices):

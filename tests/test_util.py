@@ -1,8 +1,9 @@
 import time
-import pytest
-import numpy as np
 
-from ymt_mesh_retarget.util import timeit, get_short_name
+import numpy as np
+import pytest
+
+from ymt_mesh_retarget.util import get_short_name, timeit
 
 
 def test_timeit_decorator():

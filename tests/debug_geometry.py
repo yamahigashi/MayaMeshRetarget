@@ -2,6 +2,7 @@ import numpy as np
 
 from ymt_mesh_retarget.registration.geometry import ray_triangle_intersection, ray_triangle_intersection_with_uv
 
+
 def debug_ray_triangle_intersection():
     """Debug the ray-triangle intersection function."""
     # Triangle vertices

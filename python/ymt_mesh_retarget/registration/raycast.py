@@ -515,7 +515,7 @@ def perform_raycast(
         vertex_idx = mapping_result.vertex_index
         vertex_pos = src_mesh.get_points()[vertex_idx]
 
-        flag = vertex_idx == 2
+        flag = vertex_idx == 3320
 
         # Process each mapping point
         for current_bone in mapping_result.node_array:
@@ -541,15 +541,38 @@ def perform_raycast(
             src_start_joint_index = src_bone_group[current_bone_index].start_joint_index
             src_end_joint_index = src_bone_group[current_bone_index].end_joint_index
 
+            if flag:
+                print(f"vertex_pos: {vertex_pos}")
+                print(f"current_src_p: {current_src_p}")
+                print(f"current_src_pv: {current_src_pv}")
+                print(f"current_src_pv_norm: {current_src_pv_norm}")
+                print(f"current_src_normal_pv: {current_src_normal_pv}")
+
             current_src_bone_start_point = src_joint_group[src_start_joint_index].position
             current_src_bone_end_point = src_joint_group[src_end_joint_index].position
             current_src_bone_v = current_src_bone_end_point - current_src_bone_start_point
+
+            if flag:
+                print(f"current_src_bone_start_point: {current_src_bone_start_point}")
+                print(f"current_src_bone_end_point: {current_src_bone_end_point}")
+                print(f"current_src_bone_v: {current_src_bone_v}")
 
             # Calculate distance ratio along bone
             current_src_bone_v_norm = np.linalg.norm(current_src_bone_v)
             if current_src_bone_v_norm < 1e-10:
                 continue
-            src_distance = np.linalg.norm(current_src_p - current_src_bone_start_point) / current_src_bone_v_norm
+
+            w = (current_src_p - current_src_bone_start_point)
+            dot_val = np.dot(w, current_src_bone_v)   # unnormalized
+            bone_len_sq = np.dot(current_src_bone_v, current_src_bone_v)  # == current_src_bone_v_norm^2
+            t = dot_val / bone_len_sq
+            # Possibly clamp if 0 <= t <= 1 is desired
+            src_distance = t   # or rename "t"
+            src_distance2 = np.linalg.norm(current_src_p - current_src_bone_start_point) / current_src_bone_v_norm
+
+            if flag:
+                print(f"src_distance: {src_distance}")
+                print(f"src_distance2: {src_distance2}")
 
             # Get target bone information
             tar_start_joint_index = src2tar_map[src_start_joint_index]
@@ -573,9 +596,13 @@ def perform_raycast(
             # Calculate corresponding point on target bone
             p = current_tar_bone_start_point + current_tar_bone_v * src_distance
             p = np.array(p).squeeze()
+            if flag:
+                print(f"p: {p}")
 
             # Get direction vector
             d = np.array(current_src_normal_pv).squeeze()
+            if flag:
+                print(f"d: {d}")
 
             # Generate sample directions
             sample_directions = geometry.rand_cone_vector(d, sample_degree, sample_number, seed)
@@ -600,14 +627,11 @@ def perform_raycast(
                 ray_data["node_weight"][:current_batch_size] = current_bone_weight
                 ray_data["target_distance"][:current_batch_size] = current_src_pv_norm
                 if flag:
-                    print(f"ray_origins: {ray_origins[:current_batch_size]}, ray_directions: {ray_directions[:current_batch_size]}")
                     print(f"ray_data: {ray_data[:current_batch_size]}")
                     print(f"current_vert: {current_vert}, current_bone_index: {current_bone_index}, current_bone_weight: {current_bone_weight}")
 
                 # Cast rays
                 res = engine.cast_rays(ray_origins[:current_batch_size], ray_directions[:current_batch_size])
-                if flag:
-                    print(f"res: {res}")
 
                 # Process hits
                 hit_mask = res["geomID"] >= 0

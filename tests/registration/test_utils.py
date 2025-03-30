@@ -1,17 +1,18 @@
 import os
+
 import numpy as np
 import pytest
-
 from maya import cmds, standalone
 from maya.api import OpenMaya as om
 
+from ymt_mesh_retarget.registration.core import JointNode
 from ymt_mesh_retarget.registration.utils import (
+    calculate_average_nearest_distance,
     get_matched_info,
     mesh_bounding_box_center,
     mesh_bounding_box_size,
-    calculate_average_nearest_distance
 )
-from ymt_mesh_retarget.registration.core import JointNode
+
 
 # テストのためのモックJointNodeを作成するユーティリティ関数
 def create_mock_joint_node(name, position=None, index=0):

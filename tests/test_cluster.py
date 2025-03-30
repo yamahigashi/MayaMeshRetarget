@@ -1,11 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
 
-from ymt_mesh_retarget.cluster import (
-    cluster_vertices_by_skin_weight,
-    refine_clusters_by_topology
-)
+from ymt_mesh_retarget.cluster import cluster_vertices_by_skin_weight, refine_clusters_by_topology
 from ymt_mesh_retarget.types import MeshPath
 
 
@@ -144,6 +142,6 @@ def test_cluster_vertices_no_skin():
                 # Call the function
                 labels = cluster_vertices_by_skin_weight(mesh_paths)
                 
-                # Verify each vertex is in its own cluster (fallback behavior)
+                # Verify all vertices are labeled -1 (no cluster)
                 assert len(labels) == 6
-                assert len(set(labels)) == 6  # All vertices should be in different clusters
+                assert np.all(labels == -1)  # All vertices should have label -1

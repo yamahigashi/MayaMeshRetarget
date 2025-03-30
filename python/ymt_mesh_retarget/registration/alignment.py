@@ -9,9 +9,13 @@ import numpy as np
 from maya import cmds
 from maya.api import OpenMaya as om
 
-from ..logic import RBF, calculate_rbf_weight_matrix, get_distance_matrix
-from ..types import VertexArray
-from ..util import timeit
+from ..logger import logger
+from ..logic import (
+    RBF,
+    calculate_rbf_weight_matrix,
+    get_distance_matrix,
+)
+from ..util import get_short_name, timeit
 from .core import BoneNode, CorrespondencePoint, JointNode, Kernel
 from .utils import (
     find_root_joints,
@@ -23,15 +27,16 @@ from .utils import (
 
 if typing.TYPE_CHECKING:
     from ..objects import MeshObject
+    from ..types import VertexArray
 
 
 @timeit
 def calculate_alignment_transform_rbf(
-    src_points: NDArray[np.float64],
-    tar_points: NDArray[np.float64],
+    src_points: "VertexArray",
+    tar_points: "VertexArray",
     kernel: "Kernel" = RBF.linear,
     radius: float = 1.0,
-) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
+) -> Callable[["VertexArray"], "VertexArray"]:
     """Calculate alignment transform using RBF.
 
     Use RBF to calculate the alignment transform of source space to target space.
@@ -53,7 +58,7 @@ def calculate_alignment_transform_rbf(
         radius=radius,
     )
 
-    def rbf_transform(query_points: NDArray[np.float64]) -> NDArray[np.float64]:
+    def rbf_transform(query_points: "VertexArray") -> "VertexArray":
         """Transform query points from source space to target space using RBF.
 
         Args:
@@ -267,3 +272,142 @@ def match_joint_trees(
     src_indices = match_joint_positions(src_joint_group, tar_joint_group)
 
     return src_indices
+
+
+def shrink_mesh_toward_skeleton(
+    vertices: "VertexArray",
+    joint_group: list[JointNode],
+    bone_group: list[BoneNode],
+    weights: list[list[float]],
+    shrink_factor: float = 0.5,
+) -> "VertexArray":
+    """Move each vertex toward its associated bone(s) to simulate skeleton shrinkage.
+
+    Args:
+        vertices: (N,3) source vertex positions
+        joint_group: Joint hierarchy
+        bone_group: List of bones
+        weights: skinning weights per vertex
+        shrink_factor: shrink amount in [0.0, 1.0]; 1.0 = full projection onto bone
+
+    Returns:
+        Deformed vertex array (N,3)
+    """
+    num_vertices = vertices.shape[0]
+    new_vertices = np.copy(vertices)
+
+    for vidx in range(num_vertices):
+        vertex = vertices[vidx]
+
+        # ウェイト付きの射影位置をまとめる
+        weighted_projection = np.zeros(3, dtype=np.float32)
+        total_weight = 0.0
+
+        for bone in bone_group:
+            start_idx = bone.start_joint_index
+            end_idx   = bone.end_joint_index
+
+            # ウェイトの取り出し (無効なインデックスや極小ウェイトはスキップ)
+            w_start = 0.0
+            w_end   = 0.0
+
+            # start_joint_index のウェイトを取得
+            if 0 <= start_idx < len(weights[vidx]):
+                w_start = weights[vidx][start_idx]
+            # end_joint_index のウェイトを取得
+            if 0 <= end_idx < len(weights[vidx]):
+                w_end = weights[vidx][end_idx]
+
+            w = w_start + w_end
+            if w <= 1e-6:
+                # スキップ(このボーンからの影響は無視)
+                continue
+
+            # ボーンの両端ジョイントの位置を取得
+            start_joint = joint_group[start_idx]
+            end_joint   = joint_group[end_idx]
+            a = start_joint.position  # Bone start
+            b = end_joint.position    # Bone end
+            ab = b - a
+            ab_norm = np.linalg.norm(ab)
+
+            # ボーンがゼロ長さに近い場合はスキップ
+            if ab_norm < 1e-6:
+                continue
+
+            # ボーン方向単位ベクトル
+            ab_dir = ab / ab_norm
+
+            # 頂点をボーンの線分上に射影 (最近接点を取得)
+            ap = vertex - a
+            t = np.dot(ap, ab_dir)
+            # 0 ~ ab_norm の範囲にクランプ (線分外に出ないようにする)
+            t = np.clip(t, 0.0, ab_norm)
+            projected = a + ab_dir * t
+
+            # 重み w を使って加算
+            weighted_projection += w * projected
+            total_weight += w
+
+        # 1つも有効なボーンがなければスキップ
+        if total_weight < 1e-6:
+            continue
+
+        # ボーンへの射影点を頂点に反映 (shrink_factor分だけ寄せる)
+        final_proj = weighted_projection / total_weight
+
+        # check if final_proj is NaN or infinite
+        if np.any(np.isinf(final_proj)) or np.any(np.isnan(final_proj)):
+            logger.error("Final projection contains infinite or NaN values")
+            logger.error(f"{np.where(np.isnan(final_proj))} count: {np.sum(np.isnan(final_proj))}")
+            logger.error(f"{np.where(np.isinf(final_proj))} count: {np.sum(np.isinf(final_proj))}")
+            continue
+
+        new_vertices[vidx] = (1.0 - shrink_factor) * vertex + shrink_factor * final_proj
+
+    return new_vertices
+
+
+@timeit
+def project_shrunk_vertices_nearest(
+    shrunk_vertices: "VertexArray",
+    target_vertices: "VertexArray",
+    k: int = 1,
+) -> list[CorrespondencePoint]:
+    """Project shrunk vertices to their nearest neighbor(s) on the target mesh.
+
+    Args:
+        shrunk_vertices: (N,3) array of deformed vertex positions
+        target_vertices: (M,3) array of target vertex positions
+        k: Number of nearest neighbors to consider per vertex (default: 1)
+
+    Returns:
+        List of CorrespondencePoint(source_index=i, target_index=nearest_j, score=1.0)
+    """
+    from scipy.spatial import cKDTree
+
+    try:
+        tree = cKDTree(target_vertices)
+    except ValueError:
+        # check if target_vertices has infinite or NaN values
+        if np.any(np.isinf(target_vertices)) or np.any(np.isnan(target_vertices)):
+            logger.error("Target vertices contain infinite or NaN values")
+            logger.error(f"{np.where(np.isnan(target_vertices))} count: {np.sum(np.isnan(target_vertices))}")
+            logger.error(f"{np.where(np.isinf(target_vertices))} count: {np.sum(np.isinf(target_vertices))}")
+        raise
+
+    # Perform nearest neighbor search
+    if k == 1:
+        distances, indices = tree.query(shrunk_vertices)  # shape (N,)
+        return [
+            CorrespondencePoint(source_index=i, target_index=int(indices[i]), score=1.0)
+            for i in range(len(shrunk_vertices))
+        ]
+    else:
+        distances, indices = tree.query(shrunk_vertices, k=k)  # shape (N,k)
+        cps: list[CorrespondencePoint] = []
+        for i in range(len(shrunk_vertices)):
+            for j in range(k):
+                cp = CorrespondencePoint(source_index=i, target_index=int(indices[i][j]), score=1.0)
+                cps.append(cp)
+        return cps

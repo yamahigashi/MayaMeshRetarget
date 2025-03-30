@@ -62,6 +62,26 @@ class DistanceScoring(IScoringComponent):
 
 
 @dataclass
+class DistanceThresholdScoring(IScoringComponent):
+    """Scoring component based on distance with threshold."""
+
+    threshold: float = 0.1
+    weight: float = 1.0
+
+    def compute_score(self, context: dict[str, Any]) -> float:
+        """Compute score based on distance with threshold."""
+        distance = context.get("distance", float("inf"))
+        if distance > self.threshold:
+            return 0.0
+
+        return self.weight
+
+    def get_weight(self) -> float:
+        """Get the weight of this scoring component."""
+        return self.weight
+
+
+@dataclass
 class RayQualityScoring(IScoringComponent):
     """Scoring component based on ray quality."""
 
@@ -134,6 +154,30 @@ class NormalScoring(IScoringComponent):
 
 
 @dataclass
+class NormalThresholdScoring(IScoringComponent):
+    """Scoring component based on normal similarity with threshold."""
+
+    threshold: float = 0.1
+    weight: float = 1.0
+
+    def compute_score(self, context: dict[str, Any]) -> float:
+        """Compute score based on normal similarity."""
+        normal_src = context.get("normal_src")
+        if normal_src is None:
+            return 0.0
+
+        norm_val = np.linalg.norm(normal_src)
+        if norm_val < self.threshold:
+            return 0.0
+
+        return self.weight
+
+    def get_weight(self) -> float:
+        """Get the weight of this scoring component."""
+        return self.weight
+
+
+@dataclass
 class WeightVectorScoring(IScoringComponent):
     """Scoring component based on weight vector similarity."""
 
@@ -181,6 +225,31 @@ class WeightVectorScoring(IScoringComponent):
 
 
 @dataclass
+class WeightVectorThresholdScoring(IScoringComponent):
+    """Scoring component based on weight vector similarity with threshold."""
+
+    threshold: float = 0.1
+    weight: float = 1.0
+
+    def compute_score(self, context: dict[str, Any]) -> float:
+        """Compute score based on weight vector similarity."""
+        weights_src = context.get("weights_src")
+        if weights_src is None:
+            return 0.0
+
+        norm_val = np.linalg.norm(weights_src)
+        if norm_val < self.threshold:
+
+            return 0.0
+
+        return self.weight
+
+    def get_weight(self) -> float:
+        """Get the weight of this scoring component."""
+        return self.weight
+
+
+@dataclass
 class LaplacianScoring(IScoringComponent):
     """Scoring component based on Laplacian coordinate similarity."""
 
@@ -218,6 +287,30 @@ class LaplacianScoring(IScoringComponent):
         score = (cosine_similarity + 1.0) * 0.5
 
         return self.weight * score
+
+    def get_weight(self) -> float:
+        """Get the weight of this scoring component."""
+        return self.weight
+
+
+@dataclass
+class LaplacianThresholdScoring(IScoringComponent):
+    """Scoring component based on Laplacian similarity with threshold."""
+
+    threshold: float = 0.1
+    weight: float = 1.0
+
+    def compute_score(self, context: dict[str, Any]) -> float:
+        """Compute score based on Laplacian similarity."""
+        laplacian_src = context.get("laplacian_src")
+        if laplacian_src is None:
+            return 0.0
+
+        norm_val = np.linalg.norm(laplacian_src)
+        if norm_val < self.threshold:
+            return 0.0
+
+        return self.weight
 
     def get_weight(self) -> float:
         """Get the weight of this scoring component."""

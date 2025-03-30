@@ -1,12 +1,10 @@
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
 from maya.api import OpenMaya as om
 
-from ymt_mesh_retarget.inpaint import (
-    segregate_vertices_by_confidence,
-    inpaint_distance
-)
+from ymt_mesh_retarget.inpaint import inpaint_distance, segregate_vertices_by_confidence
 from ymt_mesh_retarget.types import MeshPath
 
 

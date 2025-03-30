@@ -1,15 +1,14 @@
 import numpy as np
 import pytest
-
 from maya.api import OpenMaya as om
 
 from ymt_mesh_retarget.registration.core import (
-    JointNode,
     BoneNode,
     CorrespondencePoint,
+    JointNode,
     MappingNode,
     MappingResult,
-    RegistrationOptions
+    RegistrationOptions,
 )
 
 

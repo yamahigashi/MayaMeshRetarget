@@ -1,7 +1,7 @@
-import pytest
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 from maya.api import OpenMaya as om
 
 from ymt_mesh_retarget.objects.base import RetargetableObject

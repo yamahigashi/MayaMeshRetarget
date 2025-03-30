@@ -1,15 +1,16 @@
-import numpy as np
-import pytest
 import math
 
+import numpy as np
+import pytest
+
 from ymt_mesh_retarget.registration.geometry import (
+    calculate_triangle_normal,
+    point_to_line_segment_distance,
+    point_to_triangle_distance,
     rand_cone_vector,
     ray_triangle_intersection,
     ray_triangle_intersection_with_uv,
     triangle_interpolation,
-    calculate_triangle_normal,
-    point_to_triangle_distance,
-    point_to_line_segment_distance
 )
 
 

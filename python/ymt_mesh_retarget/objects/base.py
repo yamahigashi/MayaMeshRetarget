@@ -25,13 +25,17 @@ class RetargetableObject(ABC):
         """サンプリングされた点群を取得."""
         pass
 
+    def get_smoothed_points(self, iterations: int = 10, smoothing_factor: float = 0.5) -> "VertexArray":  # noqa: ARG002
+        """サンプリングされた点群を取得."""
+        return self.get_points()
+
     @abstractmethod
     def get_transforms(self) -> list[dict]:
         """変換情報（位置、回転、スケール）を取得."""
         pass
 
     @abstractmethod
-    def duplicate(self, suffix: str = "_retarget") -> "RetargetableObject":
+    def duplicate(self, suffix: str = "_retarget", parent: Optional[str] = None) -> "RetargetableObject":
         """オブジェクトを複製."""
         pass
 
@@ -64,8 +68,12 @@ class RetargetableObject(ABC):
 
         return None
 
-    def parent_retarget(self, name: str, suffix: str = "_retarget") -> str:
+    def parent_retarget(self, name: str, suffix: str = "_retarget", parent: Optional[str] = None) -> str:
         """リターゲット用の親オブジェクトを作成."""
+        if parent:
+            parented_node = cmds.parent(name, parent)
+            return parented_node
+
         original_parent = self.get_parent_name()
         if not original_parent:
             logger.debug(f"Parent not found, {name}")
@@ -77,6 +85,7 @@ class RetargetableObject(ABC):
         retargeted_parent = cmds.ls(retargeted_parent_name, long=True)
         if not retargeted_parent:
             logger.debug(f"Retargeted parent not found, {original_parent} -> {retargeted_parent_name}")
+            return name
 
         parented_node = cmds.parent(name, retargeted_parent)
 

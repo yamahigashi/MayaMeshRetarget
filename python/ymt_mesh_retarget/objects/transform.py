@@ -52,11 +52,11 @@ class TransformObject(RetargetableObject):
             },
         ]
 
-    def duplicate(self, suffix: str = "_retarget") -> "TransformObject":
+    def duplicate(self, suffix: str = "_retarget", parent: Optional[str] = None) -> "TransformObject":
         """トランスフォームを複製."""
 
         duplicate = cmds.duplicate(self.name, parentOnly=True)[0]
-        duplicate = self.parent_retarget(duplicate)
+        duplicate = self.parent_retarget(duplicate, parent=parent)
 
         short_name = get_short_name(self.name)
         duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")

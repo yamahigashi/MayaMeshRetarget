@@ -1,34 +1,39 @@
-# objects/__init__.py
-import sys
-import typing
+from typing import TYPE_CHECKING, Union, cast
 
 import numpy as np
 from maya import cmds
 
+from .base import RetargetableObject
 from .joint import JointObject
 from .mesh import MeshObject
 from .np_points import NumpyPointsObject
 from .transform import TransformObject
 
 
-if typing.TYPE_CHECKING:
-    from .base import RetargetableObject
+if TYPE_CHECKING:
+    import sys
+
     if sys.version_info >= (3, 10):
-        # type alias for Literal
         from typing import TypeAlias
-        RetargetableArg: TypeAlias = typing.Union[str, np.ndarray, "RetargetableObject"]
+        RetargetableArg: TypeAlias = Union[str, np.ndarray, RetargetableObject]
     else:
-        RetargetableArg = typing.Union[str, np.ndarray, "RetargetableObject"]
+        RetargetableArg = Union[str, np.ndarray, RetargetableObject]
 
 
-
-def create_retargetable_object(path: "RetargetableArg") -> "RetargetableObject":
+def create_retargetable_object(path: RetargetableArg) -> RetargetableObject:
     """パスから適切なRetargetableObjectインスタンスを作成."""
+    from .base import RetargetableObject
 
+    # すでにRetargetableObjectインスタンスの場合はそのまま返す
+    if isinstance(path, RetargetableObject):
+        return path
+
+    # NumPy配列の場合はNumpyPointsObjectを返す
     if isinstance(path, np.ndarray):
         return NumpyPointsObject(path)
 
-    if not path or not cmds.objExists(path):
+    # 文字列の場合はオブジェクトタイプに基づいて適切なインスタンスを作成
+    if not path or not isinstance(path, str) or not cmds.objExists(path):
         raise ValueError(f"Invalid object path: {path}")
 
     node_type = cmds.nodeType(path)

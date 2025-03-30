@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -32,7 +34,7 @@ class NumpyPointsObject(RetargetableObject):
             },
         ]
 
-    def duplicate(self, suffix: str = "_retarget") -> "NumpyPointsObject":
+    def duplicate(self, suffix: str = "_retarget", parent: Optional[str] = None) -> "NumpyPointsObject":  # noqa: ARG002
         """Dummy method to duplicate the object.
 
         Numpy Points object does not have a duplicate method.

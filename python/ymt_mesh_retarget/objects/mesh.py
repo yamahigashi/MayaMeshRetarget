@@ -89,7 +89,7 @@ class MeshObject(RetargetableObject):
 
         return None
 
-    def duplicate(self, suffix: str = "_retarget") -> "MeshObject":
+    def duplicate(self, suffix: str = "_retarget", parent: Optional[str] = None) -> "MeshObject":
         """メッシュを複製."""
 
         mesh_name = self.dag_path.fullPathName().split("|")[-1]
@@ -97,7 +97,7 @@ class MeshObject(RetargetableObject):
 
         trans = cmds.listRelatives(self.name, parent=True, fullPath=True)[0]
         duplicate = cmds.duplicate(trans, name=new_name)[0]
-        duplicate = self.parent_retarget(duplicate)
+        duplicate = self.parent_retarget(duplicate, parent=parent)
 
         short_name = get_short_name(trans)
         duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from maya import cmds
 from scipy.spatial.transform import Rotation
@@ -62,11 +64,11 @@ class JointObject(RetargetableObject):
         joints.insert(0, self.name)  # ルートジョイントを追加
         return joints
 
-    def duplicate(self, suffix: str = "_retarget") -> "JointObject":
+    def duplicate(self, suffix: str = "_retarget", parent: Optional[str] = None) -> "JointObject":
         """ジョイント階層を複製."""
 
         duplicate = cmds.duplicate(self.name, parentOnly=True)[0]
-        duplicate = self.parent_retarget(duplicate)
+        duplicate = self.parent_retarget(duplicate, parent=parent)
 
         short_name = get_short_name(self.name)
         duplicate = cmds.rename(duplicate, f"{short_name}{suffix}")

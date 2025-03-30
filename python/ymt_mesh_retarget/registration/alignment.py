@@ -84,7 +84,7 @@ def calculate_alignment_transform(
     tar_joint_group: list[JointNode],
     kernel: "Kernel" = RBF.linear,
     radius: float = 1.0,
-) -> Optional[NDArray[np.float64]]:
+) -> Optional["VertexArray"]:
     """Calculate alignment transform between joint hierarchies.
 
     This function aligns the source joint hierarchy to the target joint hierarchy.
@@ -107,7 +107,7 @@ def calculate_alignment_transform(
 
     # (3) Need at least 3 matching joints for RBF
     if len(matched_src_indices) < 3:
-        print(f"Not enough matched joints to build RBF. Found {len(matched_src_indices)}, need at least 3.")
+        logger.warning(f"Not enough matched joints to build RBF. Found {len(matched_src_indices)}, need at least 3.")
         return None
 
     # (4) Create RBF transform function (source to target)
@@ -143,41 +143,27 @@ def get_joint_tree(joint_names: list[str]) -> tuple[list[om.MDagPath], list[Join
         - List of BoneNode objects
     """
     # Get joint DAG paths
-    joint_paths = []
+    joint_paths_input = []
     for joint_name in joint_names:
-        # Check if joint exists
-        if not cmds.objExists(joint_name):
-            continue
+        if cmds.objExists(joint_name):
+            selection = om.MSelectionList()
+            selection.add(joint_name)
+            dag_path = selection.getDagPath(0)
+            joint_paths_input.append(dag_path)
 
-        # Get DAG path
-        selection = om.MSelectionList()
-        selection.add(joint_name)
-        dag_path = selection.getDagPath(0)
-        joint_paths.append(dag_path)
-
-    if not joint_paths:
+    if not joint_paths_input:
         return [], [], []
 
-    # --------------------------------------------------------------------
-    # 2. Find root joints among those DAG paths
-    # --------------------------------------------------------------------
-    root_joints = find_root_joints(joint_paths)
+    # 2) Find root joints among the DAG paths
+    root_joints = find_root_joints(joint_paths_input)
 
-    # --------------------------------------------------------------------
-    # 3. Perform a BFS from each root to build the JointNode/BoneNode lists
-    # --------------------------------------------------------------------
-    joint_group: list[JointNode] = []
-    bone_group: list[BoneNode] = []
+    # 3) BFS gather: build BFS-ordered data
+    bfs_ordered_joint_group = []
+    bfs_ordered_bone_group = []
+    bfs_ordered_paths = []
+
     visited = set()
-
-    # We will re-populate joint_paths in BFS order
-    bfs_ordered_paths: list[om.MDagPath] = []
-
-    # A queue of (dag_path, parent_index)
-    # parent_index = -1 indicates a root (no parent)
-    queue = []
-    for root in root_joints:
-        queue.append((root, -1))
+    queue = [(root, -1) for root in root_joints]
 
     while queue:
         current_path, parent_index = queue.pop(0)
@@ -187,48 +173,70 @@ def get_joint_tree(joint_names: list[str]) -> tuple[list[om.MDagPath], list[Join
 
         visited.add(current_full_name)
 
-        # ----------------------------------------------------------------
-        # Create a JointNode for the current DAG path
-        # ----------------------------------------------------------------
-        name = current_full_name
-        pos = cmds.xform(name, query=True, translation=True, worldSpace=True)
-        position = np.array(pos, dtype=np.float64)
-        matrix = cmds.xform(name, query=True, matrix=True, worldSpace=True)
+        # Create a JointNode
+        pos = cmds.xform(current_full_name, query=True, t=True, ws=True)
+        matrix = cmds.xform(current_full_name, query=True, m=True, ws=True)
 
-        current_index = len(joint_group)
-        joint_node = JointNode(
+        current_index = len(bfs_ordered_joint_group)
+        jnode = JointNode(
             path=current_path,
             index=current_index,
-            detail_name=name,
-            position=position,
+            detail_name=current_full_name,
+            position=np.array(pos, dtype=np.float64),
             matrix=matrix,
         )
-
-        joint_group.append(joint_node)
+        bfs_ordered_joint_group.append(jnode)
         bfs_ordered_paths.append(current_path)
 
-        # ----------------------------------------------------------------
-        # Create a BoneNode if this is not a root
-        # ----------------------------------------------------------------
+        # If not a root, create a bone from the parent to the child
         if parent_index != -1:
-            bone_node = BoneNode(
-                start_joint_index=parent_index,
-                end_joint_index=current_index,
-            )
-            bone_group.append(bone_node)
+            bone = BoneNode(start_joint_index=parent_index, end_joint_index=current_index)
+            bfs_ordered_bone_group.append(bone)
 
-        # ----------------------------------------------------------------
         # Enqueue child joints
-        # ----------------------------------------------------------------
-        children = cmds.listRelatives(name, children=True, type="joint", fullPath=True) or []
+        children = cmds.listRelatives(current_full_name, c=True, type="joint", f=True) or []
         for child_name in children:
             child_sel = om.MSelectionList()
             child_sel.add(child_name)
             child_path = child_sel.getDagPath(0)
-
             queue.append((child_path, current_index))
 
-    return joint_paths, joint_group, bone_group
+    # ---------------------------------------------------------------------
+    # 4) Post-process: reorder the BFS results to match the `joint_names` order
+    # ---------------------------------------------------------------------
+    # Build map from full name -> BFS index
+    name_to_bfs_index = {
+        jnode.detail_name: i
+        for i, jnode in enumerate(bfs_ordered_joint_group)
+    }
+
+    # Create the final joint_group (and a map from old -> new index)
+    final_joint_group = []
+    old_to_new_index = {}
+    for name in joint_names:
+        if name in name_to_bfs_index:
+            old_index = name_to_bfs_index[name]
+            new_index = len(final_joint_group)
+            old_to_new_index[old_index] = new_index
+            final_joint_group.append(bfs_ordered_joint_group[old_index])
+
+    # Remap bone indices
+    final_bone_group = []
+    for bone in bfs_ordered_bone_group:
+        if (bone.start_joint_index in old_to_new_index and
+            bone.end_joint_index   in old_to_new_index):
+            new_start = old_to_new_index[bone.start_joint_index]
+            new_end   = old_to_new_index[bone.end_joint_index]
+            bone = BoneNode(start_joint_index=new_start, end_joint_index=new_end)
+            final_bone_group.append(bone)
+
+    # Reorder the joint_paths similarly
+    final_joint_paths = [None] * len(final_joint_group)
+    for new_idx, jnode in enumerate(final_joint_group):
+        final_joint_paths[new_idx] = jnode.path
+
+    # Return results in the original `joint_names` order
+    return final_joint_paths, final_joint_group, final_bone_group
 
 
 def match_joint_trees(

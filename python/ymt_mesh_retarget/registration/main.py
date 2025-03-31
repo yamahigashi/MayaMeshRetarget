@@ -24,7 +24,6 @@ from .alignment import (
     calculate_alignment_transform,
     get_joint_tree,
     match_joint_trees,
-    project_shrunk_vertices_nearest,
     shrink_mesh_toward_skeleton,
 )
 

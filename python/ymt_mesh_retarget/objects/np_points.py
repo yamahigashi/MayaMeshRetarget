@@ -1,7 +1,6 @@
 from typing import Optional
 
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 from .base import RetargetableObject
 
@@ -55,7 +54,7 @@ class NumpyPointsObject(RetargetableObject):
         """
         pass
 
-    def get_children(self, type_filter: str = None) -> list["RetargetableObject"]:
+    def get_children(self, type_filter: Optional[str] = None) -> list["RetargetableObject"]:
         """Get the children objects.
 
         Numpy Points object does not have children objects.

@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 
 from ..logger import logger
 from ..types import ensure_list
-from ..util import get_short_name, timeit
+from ..util import get_short_name
 from .core import JointNode, RegistrationOptions, Vector3
 
 

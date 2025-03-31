@@ -395,7 +395,7 @@ class RegistrationOptions:
             - Default: [] (empty list, initialized at runtime if use_scoring_components is True)
 
         use_normal_scoring: Whether to use vertex normal similarity for scoring.
-            When True, enables normal-based scoring which helps ensure normals 
+            When True, enables normal-based scoring which helps ensure normals
             point in similar directions at correspondence points.
             - Only applicable when use_scoring_components is True.
             - Default: True

@@ -24,7 +24,6 @@ from .base import RetargetableObject
 
 if typing.TYPE_CHECKING:
     from ..types import (
-        IndexArray,
         VertexArray,
     )
 
@@ -65,7 +64,7 @@ class MeshObject(RetargetableObject):
         """メッシュの頂点をnumpy配列として取得."""
         return convert_points_to_numpy(self.dag_path, sampling_stride)
 
-    def get_smoothed_points(self, iterations: int = 10, smoothing_factor: float = 0.8) -> "VertexArray":
+    def get_smoothed_points(self, iterations: int = 10, smoothing_factor: float = 0.5) -> "VertexArray":
         """Return smoothed vertex positions using Laplacian smoothing."""
         return laplacian_smooth(self.mesh_fn, iterations, smoothing_factor)
 

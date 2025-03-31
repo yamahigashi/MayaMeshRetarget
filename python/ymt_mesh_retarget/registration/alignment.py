@@ -15,7 +15,7 @@ from ..logic import (
     calculate_rbf_weight_matrix,
     get_distance_matrix,
 )
-from ..util import get_short_name, timeit
+from ..util import timeit
 from .core import BoneNode, CorrespondencePoint, JointNode, Kernel
 from .utils import (
     find_root_joints,

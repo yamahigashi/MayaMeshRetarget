@@ -1,19 +1,22 @@
 """Mesh Registration Package.
 
-This package implements functionality to find corresponding points between meshes with different topologies.
-Based on the techniques from the "Skeleton-Aware Skin Weight Transfer" paper,
-it generates correspondence point pairs for RBF interpolation between source and target meshes
-with different vertex counts.
+This package implements functionality to find corresponding points between meshes with different topologies
+and to align meshes using joint optimization.
+
+The package offers two main approaches:
+1. Correspondence-based registration using the "Skeleton-Aware Skin Weight Transfer" technique
+2. ICP-based (Iterative Closest Point) mesh alignment with joint parameter optimization
 
 Main features:
 - Correspondence search using skeletal information
 - Vertex sampling and reduction
 - Raycast-based point matching
 - Joint-based alignment
+- ICP-based mesh retargeting with joint optimization
 
 Usage Examples:
 --------------
-Basic usage:
+Basic correspondence search:
 
     from ymt_mesh_retarget.registration import find_correspondence_pairs
 
@@ -23,7 +26,26 @@ Basic usage:
         target_mesh="targetModel"
     )
 
-Advanced usage with custom options:
+ICP-based mesh alignment:
+
+    from ymt_mesh_retarget.registration import align_mesh_with_icp, ICPOptions
+
+    # Create custom options
+    options = ICPOptions(
+        max_iterations=20,
+        staged_optimization=True,
+        include_scale=True
+    )
+
+    # Align source mesh to target mesh
+    align_mesh_with_icp(
+        source_mesh="sourceModel",
+        target_mesh="targetModel",
+        source_root_joint="rootJoint",
+        options=options
+    )
+
+Advanced correspondence-based registration:
 
     from ymt_mesh_retarget.registration import (
         MeshRegistration,
@@ -75,6 +97,15 @@ from .core import (
 
 # Geometry functions
 from .geometry import rand_cone_vector, ray_triangle_intersection, triangle_interpolation
+
+# Import ICP modules
+from .icp import (
+    ICPOptions,
+    JointParameter,
+    MeshRetargetICP,
+    SkeletonState,
+    align_mesh_with_icp,
+)
 from .main import MeshRegistration, find_correspondence_pairs, visualize_correspondences
 
 # Mapping functions
@@ -97,24 +128,28 @@ from .weights import get_weight_distance
 
 # List of public API elements
 __all__ = [
+    # Core data classes
     "BoneNode",
     "CorrespondencePoint",
+    # ICP-related classes and functions
+    "ICPOptions",
     "JointNode",
-    # Internal API - For advanced users and custom implementations
-    # Core data classes
+    "JointParameter",
     "MappingNode",
     "MappingResult",
-    # Public API - Primary classes and functions for most users
+    # Main registration classes
     "MeshRegistration",
+    "MeshRetargetICP",
     "RaycastResult",
     "RegistrationOptions",
+    "SkeletonState",
     "TriangleWeightIndex",
+    "align_mesh_with_icp",
     # Alignment functions
     "calculate_alignment_transform",
     "calculate_alignment_transform_rbf",
     "create_optimized_correspondence_points",
     "find_correspondence_pairs",
-    "find_correspondence_using_skeleton",
     "find_root_joints",
     "get_default_registration_options",
     "get_joint_tree",

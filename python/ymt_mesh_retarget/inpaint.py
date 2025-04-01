@@ -92,6 +92,10 @@ def __inpaint_distance_matrix(
     Returns:
         Updated distance matrix with inpainted values
     """
+
+    if len(unknown_indices) == 0:
+        return D
+
     all_L = []
     all_M = []
 
